@@ -343,8 +343,8 @@ def shop_action(message):
         types.InlineKeyboardButton("Купить Легу (10k)", callback_data="buy_lego"),
         types.InlineKeyboardButton("Купить Осколки (5k)", callback_data="buy_shards")
     )
-    markup.add(types.InlineKeyboardButton("🎫 Купить Билет к Сизи (1M)", callback_data="buy_sizi"))
-    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
+    (types.InlineKeyboardButton("🎫 Купить Билет к Сизи (1M)", callback_data="buy_sizi"))
+    (message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
     @bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
 def shop_action(message):
     text = (
