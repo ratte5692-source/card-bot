@@ -323,7 +323,7 @@ def gacha_action(message):
         cursor.execute("INSERT INTO inventory (user_id, card_id, count) VALUES (?, ?, 1)", (user_id, chosen_card_id))
 
 conn.commit()
-    conn.close()
+conn.close()
     
     t_label = "⚔️ Боевая" if card["type"] == "combat" else "🃏 Игральная"
     response = f"🎁 **Вы открыли гачу!\n\n✨ {card['emoji']} ** [{card['rarity']}]\n🛡 **Тип:** {t_label}\n└ {card['desc']}\n"
