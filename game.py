@@ -227,7 +227,6 @@ def decks_action(message):
     cursor = conn.cursor()
     cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'combat'", (user_id,))
     combat_deck = cursor.fetchall()
-    
     cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'play'", (user_id,))
     play_deck = cursor.fetchall()
     conn.close()
