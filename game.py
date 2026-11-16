@@ -4,7 +4,7 @@ import time
 import telebot
 from telebot import types
 
-TOKEN = "9108370532:AAHxT6A2a1XX4ed8dRer0PZy5om21HR4Xqs"  # Твой токен от BotFather
+TOKEN = "9108370532:AAF0mp_nxYvfFKb2jX4Hcpcq_bkFQz-fuW0"  # Твой токен от BotFather
 bot = telebot.TeleBot(TOKEN)
 
 # 15 карт (4 старые + новые разновидности + мифический Шут)
