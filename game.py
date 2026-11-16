@@ -337,7 +337,14 @@ def shop_action(message):
         "1️⃣ **Случайная Легендарная карта** — 10 000 🪙 *(Доступно раз в 3 часа)*\n"
         "2️⃣ **Набор из 3 000 осколков** — 5 000 🪙 *(Доступно раз в 1.5 часа)*\n"
         "3️⃣ **🎫 Билет к Сизи** — 1 000 000 🪙 *(Главная цель игры!)*\n"
-    
+    )
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("Купить Легу (10k)", callback_data="buy_lego"),
+        types.InlineKeyboardButton("Купить Осколки (5k)", callback_data="buy_shards")
+    )
+    markup.add(types.InlineKeyboardButton("🎫 Купить Билет к Сизи (1M)", callback_data="buy_sizi"))
+    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
 
 # ================= SHOP, MATH, ARENA & FLASK =================
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
