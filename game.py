@@ -77,7 +77,7 @@ def get_user_power(user_id):
     deck_cards = cursor.fetchall()
     conn.close()
     
-    power = 1   базовый клик
+    power = 1  
     for (card_id,) in deck_cards:
         if card_id in CARDS_DATA:
             power += CARDS_DATA[card_id]["buff"]
