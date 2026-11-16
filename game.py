@@ -325,7 +325,7 @@ def gacha_action(message):
 conn.commit()
 conn.close()
     
-    t_label = "⚔️ Боевая" if card["type"] == "combat" else "🃏 Игральная"
+t_label = "⚔️ Боевая" if card["type"] == "combat" else "🃏 Игральная"
     response = f"🎁 **Вы открыли гачу!\n\n✨ {card['emoji']} ** [{card['rarity']}]\n🛡 **Тип:** {t_label}\n└ {card['desc']}\n"
     if card["type"] == "play":
         response += f"✨ **Бонус:** +{card['buff']} клик | {card['pass_desc']}\n"
