@@ -7,7 +7,7 @@ from flask import Flask
 import telebot
 from telebot import types
 
-TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_БОТА")
+TOKEN = os.getenv("9108370532:AAFaoP-E41J0VChG2wO02ODaU3qfjzU_Ex8")
 bot = telebot.TeleBot(TOKEN)
 
 # ================= DATABASE SETUP =================
@@ -58,7 +58,6 @@ init_db()
 
 # ================= CARDS DATABASE =================
 CARDS = {
-    # БОЕВЫЕ КАРТЫ (11 штук)
     "goblin_combat": {"name": "Гоблин", "rarity": "Common", "type": "combat", "emoji": "🟢", "atk": 5, "hp": 20, "shards": 5, "desc": "Боевой задир."},
     "knight_combat": {"name": "Рыцарь", "rarity": "Common", "type": "combat", "emoji": "🟢", "atk": 8, "hp": 25, "shards": 5, "desc": "Защитник линии."},
     "skeleton_combat": {"name": "Скелет", "rarity": "Common", "type": "combat", "emoji": "🟢", "atk": 6, "hp": 15, "shards": 5, "desc": "Хрупкий боец."},
@@ -75,7 +74,6 @@ CARDS = {
     
     "lonely_hero": {"name": "Одинокий Герой", "rarity": "Mythic", "type": "combat", "emoji": "🔴", "atk": 90, "hp": 220, "shards": 300, "desc": "Вершина боевой мощи."},
 
-    # ИГРАЛЬНЫЕ КАРТЫ (11 штук)
     "slime_play": {"name": "Слизь", "rarity": "Common", "type": "play", "emoji": "🟢", "buff": 1, "shards": 5, "pass_desc": "+3% монет с кликов", "shards_pct": 0, "coins_pct": 3, "math_pct": 0, "gacha_disc": 0, "desc": "Липкий бонус."},
     "cat_play": {"name": "Кошка", "rarity": "Common", "type": "play", "emoji": "🟢", "buff": 1, "shards": 5, "pass_desc": "+5% осколков при плавлении", "shards_pct": 5, "coins_pct": 0, "math_pct": 0, "gacha_disc": 0, "desc": "Мурчит на удачу."},
     "pigeon_play": {"name": "Голубь", "rarity": "Common", "type": "play", "emoji": "🟢", "buff": 1, "shards": 5, "pass_desc": "+2% к награде за примеры", "shards_pct": 0, "coins_pct": 0, "math_pct": 2, "gacha_disc": 0, "desc": "Почтовая птица."},
@@ -140,7 +138,6 @@ def get_total_bonuses(user_id):
                 
     return coins_pct, shards_pct, math_pct, gacha_disc, has_jester
 
-# ================= KEYBOARD =================
 def main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("👉 Кликнуть", "📖 Колоды")
@@ -149,7 +146,6 @@ def main_keyboard():
     markup.row("🎒 Инвентарь", "📚 Каталог")
     return markup
 
-# ================= HANDLERS =================
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     user_id = message.from_user.id
@@ -418,267 +414,5 @@ def shop_callback(call):
         
         win_text = (
             "🏆 **ПОБЕДА! ВЫ СКОПИЛИ МИЛЛИОН МОНЕТ!** 🏆\n\n"
-               "Вы бросили лопату в поле, гордо расправили плечи, купили заветный золотой билет и отправились прямиком к Сизи.\n"
-            "Она бросилась вам на шею, а отец признал, что карты приносят больше пользы, чем мотыга.\n"
-            "Вы стали легендой этого магического мира!"
-        )
-        bot.send_message(call.message.chat.id, win_text, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda m: m.text == "🧠 Математический бонус")
-def math_action(message):
-    user_id = message.from_user.id
-    coins, shards, math_count, last_reset, _, _, _, _, _ = get_user(user_id)
-    
-    current_time = time.time()
-    if current_time - last_reset > 1800: # 30 минут
-        math_count = 0
-        last_reset = current_time
-        conn = sqlite3.connect("game.db", check_same_thread=False)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET math_count = 0, last_math_reset = ? WHERE user_id = ?", (last_reset, user_id))
-        conn.commit()
-        conn.close()
-        
-    if math_count >= 5:
-        bot.send_message(message.chat.id, "⏳ Лимит в 5 примеров исчерпан! Подождите 30 минут.")
-        return
-        
-    if math_count == 4:
-        expr = "(50 + 20 - 10) * 2 / 4"
-        answer = int((50 + 20 - 10) * 2 / 4)
-    else:
-        a = random.randint(10, 50)
-        b = random.randint(2, 10)
-        c = random.randint(1, 5)
-        op1 = random.choice(['+', '-', '*'])
-        op2 = random.choice(['/', '+'])
-        if op1 == '/':
-            a = b * random.randint(1, 5)
-        
-        expr_str = f"{a} {op1} {b} {op2} {c}"
-        try:
-            eval_str = expr_str.replace(':', '/')
-            answer = int(eval(eval_str))
-            expr = expr_str
-        except:
-            expr = "12 + 8 * 2 / 4"
-            answer = 16
-            
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("REPLACE INTO math_states (user_id, answer) VALUES (?, ?)", (user_id, answer))
-    conn.commit()
-    conn.close()
-    
-    bot.send_message(
-        message.chat.id,
-        f"🧠 **Математический бонус ({math_count + 1}/5)**\nРешите пример (+500 🪙):\n`{expr} = ?`",
-        parse_mode="Markdown"
-    )
-
-@bot.message_handler(func=lambda m: m.text and m.text.lstrip('-').isdigit())
-def check_math_answer(message):
-    user_id = message.from_user.id
-    user_ans = int(message.text)
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT answer FROM math_states WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        return
-        
-    correct_ans = row[0]
-    cursor.execute("DELETE FROM math_states WHERE user_id = ?", (user_id,))
-    
-    _, _, math_pct, _, _ = get_total_bonuses(user_id)
-    reward = 500
-    if math_pct > 0:
-        reward = int(reward * (1 + math_pct / 100))
-        
-    if user_ans == correct_ans:
-        cursor.execute("UPDATE users SET coins = coins + ?, math_count = math_count + 1 WHERE user_id = ?", (reward, user_id))
-        conn.commit()
-        conn.close()
-        bot.send_message(message.chat.id, f"✅ **Верно!** Вы получили **+{reward} 🪙**!", parse_mode="Markdown")
-    else:
-        conn.close()
-        bot.send_message(message.chat.id, f"❌ **Неверно!** Правильный ответ: {correct_ans}.", parse_mode="Markdown")
-
-# ================= 15 STAGES ARENA SYSTEM =================
-@bot.message_handler(func=lambda m: m.text == "⚔️ Арена")
-def arena_action(message):
-    user_id = message.from_user.id
-    coins, shards, _, _, _, _, _, arena_stage, last_arena_time = get_user(user_id)
-    
-    current_time = time.time()
-    # Кулдаун 6 часов (21600 секунд)
-    if current_time - last_arena_time < 21600:
-        hours_left = int((21600 - (current_time - last_arena_time)) // 3600)
-        mins_left = int(((21600 - (current_time - last_arena_time)) % 3600) // 60)
-        bot.send_message(message.chat.id, f"⏳ Арена на перезарядке! Следующий бой будет доступен через {hours_left} ч. {mins_left} мин.")
-        return
-
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'combat'", (user_id,))
-    deck = cursor.fetchall()
-    conn.close()
-    
-    if not deck:
-        bot.send_message(message.chat.id, "⚔️ Ваша боевая колода пуста! Экипируйте карты в разделе «Колоды».")
-        return
-        
-    total_atk = sum(CARDS[cid]["atk"] for cid, in deck if cid in CARDS)
-    total_hp = sum(CARDS[cid]["hp"] for cid, in deck if cid in CARDS)
-    
-    # Генерация статов противника в зависимости от уровня арены (1-15)
-    # На боссах (5, 10, 15) статы значительно выше
-    is_boss = arena_stage in [5, 10, 15]
-    
-    if is_boss:
-        enemy_atk = 15 + (arena_stage * 12)
-        enemy_hp = 50 + (arena_stage * 30)
-        enemy_name = f"БОСС ЭТАПА №{arena_stage}"
-    else:
-        enemy_atk = 10 + (arena_stage * 6)
-        enemy_hp = 30 + (arena_stage * 15)
-        enemy_name = f"Враг этапа {arena_stage}/15"
-
-    # Расчет победы (учитываем суммарную боевую мощь колоды)
-    player_power = total_atk * 1.5 + total_hp
-    enemy_power = enemy_atk * 1.5 + enemy_hp
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    
-    if player_power >= enemy_power:
-        reward_coins = arena_stage * 200
-        reward_shards = arena_stage * 50
-        
-        next_stage = arena_stage + 1
-        if next_stage > 15:
-            next_stage = 15 # Максимальный уровень пройден
-            
-        cursor.execute("UPDATE users SET coins = coins + ?, shards = shards + ?, arena_stage = ?, last_arena_time = ? WHERE user_id = ?", 
-                       (reward_coins, reward_shards, next_stage, current_time, user_id))
-        conn.commit()
-        conn.close()
-        
-        res_text = (
-            f"🏆 **Победа на Арене! ({arena_stage}/15)**\n"
-            f"⚔️ Противник: {enemy_name} (АТК: {enemy_atk} | ХП: {enemy_hp})\n"
-            f"🛡 Ваша сила колоды: АТК {total_atk} / ХП {total_hp}\n\n"
-            f"🎁 Награда: **+{reward_coins} 🪙** и **+{reward_shards} 💎**!\n"
-        )
-        if is_boss:
-            res_text += f"🔥 **Вы повергли грозного босса! Открыт следующий этап!**"
-        else:
-            res_text += f"➡️ Переход на этап {next_stage}!"
-        bot.send_message(message.chat.id, res_text, parse_mode="Markdown")
-    else:
-        cursor.execute("UPDATE users SET last_arena_time = ? WHERE user_id = ?", (current_time, user_id))
-        conn.commit()
-        conn.close()
-        
-        bot.send_message(
-            message.chat.id,
-            f"💀 **Поражение на этапе {arena_stage}!**\n"
-            f"Противник ({enemy_name}) оказался сильнее: АТК {enemy_atk} / ХП {enemy_hp}.\n"
-            f"Ваша сила: АТК {total_atk} / ХП {total_hp}.\n\n"
-            f"💡 Улучшайте боевую колоду через гачу или магазин и попробуйте снова через 6 часов!",
-            parse_mode="Markdown"
-        )
-
-# Настройка колод (инлайн-обработчики)
-@bot.callback_query_handler(func=lambda call: call.data in ["deck_combat", "deck_play"])
-def deck_setup_menu(call):
-    user_id = call.from_user.id
-    deck_type = "combat" if call.data == "deck_combat" else "play"
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT card_id, count FROM inventory WHERE user_id = ?", (user_id,))
-    inventory = cursor.fetchall()
-    conn.close()
-    
-    # Фильтруем карты по нужному типу колоды
-    filtered_cards = [item for item in inventory if item[0] in CARDS and CARDS[item[0]]["type"] == deck_type]
-    
-    if not filtered_cards:
-        bot.answer_callback_query(call.id, f"У вас нет карт типа {'Боевая' if deck_type=='combat' else 'Игральная'} в инвентаре!", show_alert=True)
-        return
-        
-    markup = types.InlineKeyboardMarkup()
-    for card_id, count in filtered_cards:
-        c = CARDS[card_id]
-        markup.add(types.InlineKeyboardButton(f"➕ Экипировать {c['emoji']} {c['name']} (x{count})", callback_data=f"equip_{deck_type}_{card_id}"))
-        
-    markup.add(types.InlineKeyboardButton("🗑 Очистить эту колоду", callback_data=f"clear_{deck_type}"))
-    
-    t_name = "Боевую" if deck_type == "combat" else "Игральную"
-    bot.edit_message_text(f"⚙️ Выберите карту для добавления в **{t_name} колоду** (макс. 4):", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("equip_") or call.data.startswith("clear_"))
-def deck_modify_callback(call):
-    user_id = call.from_user.id
-    data = call.data
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    
-    if data.startswith("clear_"):
-        deck_type = data.split("_")[1]
-        cursor.execute("DELETE FROM active_deck WHERE user_id = ? AND type = ?", (user_id, deck_type))
-        conn.commit()
-        conn.close()
-        bot.answer_callback_query(call.id, "🗑 Колода очищена!", show_alert=True)
-        return
-        
-    _, deck_type, card_id = data.split("_", 2)
-    
-    # Проверка лимита (максимум 4 карты в колоде)
-    cursor.execute("SELECT COUNT(*) FROM active_deck WHERE user_id = ? AND type = ?", (user_id, deck_type))
-    count = cursor.fetchone()[0]
-    if count >= 4:
-        bot.answer_callback_query(call.id, "❌ В колоде уже максимум 4 карты!", show_alert=True)
-        conn.close()
-        return
-        
-    # Проверка наличия карты в инвентаре и что она не дублируется в активной колоде
-    cursor.execute("SELECT count FROM inventory WHERE user_id = ? AND card_id = ?", (user_id, card_id))
-    inv_row = cursor.fetchone()
-    cursor.execute("SELECT 1 FROM active_deck WHERE user_id = ? AND card_id = ?", (user_id, card_id))
-    active_row = cursor.fetchone()
-    
-    if not inv_row:
-        bot.answer_callback_query(call.id, "❌ У вас нет этой карты!", show_alert=True)
-        conn.close()
-        return
-    if active_row:
-        bot.answer_callback_query(call.id, "❌ Эта карта уже в колоде!", show_alert=True)
-        conn.close()
-        return
-        
-    cursor.execute("INSERT INTO active_deck (user_id, card_id, type) VALUES (?, ?, ?)", (user_id, card_id, deck_type))
-    conn.commit()
-    conn.close()
-    
-    bot.answer_callback_query(call.id, f"✅ Карта успешно добавлена в колоду!", show_alert=True)
-
-# ================= FLASK SERVER =================
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Бот работает 24/7!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    bot.infinity_polling(skip_pending=True
+            "Вы бросили лопату в поле, гордо расправили плечи, купили заветный золотой билет и отправились прямиком к Сизи.\n"
+            "Она бросилась вам на шею, а отец признал, что карты прин
