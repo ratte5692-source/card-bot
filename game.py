@@ -7,7 +7,7 @@ from telebot import types, apihelper
 apihelper.CONNECT_TIMEOUT = 20
 apihelper.READ_TIMEOUT = 20
 
-TOKEN = "9108370532:AAHNZkpm054eCj9FSUh8fLcX8ujBG6-0QsM"
+TOKEN = "9108370532:AAFzvm3BRusLGOHTOe7hGlNPCu3urCzB4WQ"
 bot = telebot.TeleBot(TOKEN)
 
 def init_db():
