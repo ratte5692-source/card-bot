@@ -191,7 +191,11 @@ def inventory_action(message):
     
     conn = sqlite3.connect("game.db", check_same_thread=False)
     cursor = conn.cursor()
-    cursor.execute("SELECT card_id, count FROM inventory WHERE user_id = ?", (user_id,))
+    # Удаляем пустые позиции и выводим только то, что есть (> 0)
+    cursor.execute("DELETE FROM inventory WHERE count <= 0")
+    conn.commit()
+    
+    cursor.execute("SELECT card_id, count FROM inventory WHERE user_id = ? AND count > 0", (user_id,))
     items = cursor.fetchall()
     conn.close()
     
@@ -206,6 +210,7 @@ def inventory_action(message):
                 text += f"• {c['emoji']} {c['name']} x{count} [{t_label}]\n"
                 
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
+    
 
 @bot.message_handler(func=lambda m: m.text == "📖 Колоды")
 def decks_action(message):
