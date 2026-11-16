@@ -168,3 +168,115 @@ if __name__ == "__main__":
     init_db()
     print("Бот запущен и готов к работе!")
     bot.infinity_polling()
+
+import time
+
+# Словарь для отслеживания сессии примеров: user_id -> {'answer': правильный_ответ, 'left': сколько_примеров_осталось}
+user_math_session = {}
+
+# Команда для запуска математического бонуса (раз в час, по 5 примеров, по 500 монет)
+@bot.message_handler(commands=['math', 'bonus'])
+def math_bonus_start(message):
+    user_id = message.from_user.id
+    current_time = time.time()
+    
+    # Проверяем кулдаун в базе данных (1 час = 3600 секунд)
+    conn = sqlite3.connect("game.db")
+    cursor = conn.cursor()
+    
+    # Проверяем, существует ли поле last_math_time в таблице users, если нет — добавляем
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    if cursor.fetchone():
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'last_math_time' not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN last_math_time REAL DEFAULT 0")
+            conn.commit()
+
+    cursor.execute("SELECT last_math_time FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    last_time = row[0] if row and row[0] else 0
+    cooldown = 3600 # 1 час в секундах
+    
+    if current_time - last_time < cooldown:
+        minutes_left = int((cooldown - (current_time - last_time)) / 60)
+        bot.send_message(
+            message.chat.id, 
+            f"⏳ Математический бонус еще на перезарядке! Следующая сессия будет доступна через {minutes_left} мин."
+        )
+        conn.close()
+        return
+
+    conn.close()
+    
+    # Запускаем серию ровно из 5 примеров
+    send_bonus_math_problem(message.chat.id, user_id, remaining=5)
+
+def send_bonus_math_problem(chat_id, user_id, remaining):
+    if remaining <= 0:
+        # Сессия завершена, фиксируем время в базе данных
+        current_time = time.time()
+        conn = sqlite3.connect("game.db")
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET last_math_time = ? WHERE user_id = ?", (current_time, user_id))
+        conn.commit()
+        conn.close()
+        
+        bot.send_message(
+            chat_id, 
+            "🏆 **Эпично!** Ты успешно решил все 5 примеров и заработал **2500 монет**! 🎉 Возвращайся за новой порцией через час."
+        )
+        return
+
+    # Генерируем пример
+    num1 = random.randint(10, 50)
+    num2 = random.randint(10, 50)
+    op = random.choice(['+', '-', '*'])
+    
+    if op == '+':
+        ans = num1 + num2
+    elif op == '-':
+        if num1 < num2:
+            num1, num2 = num2, num1
+        ans = num1 - num2
+    else:
+        num1 = random.randint(2, 12)
+        num2 = random.randint(2, 12)
+        ans = num1 * num2
+        
+    user_math_session[user_id] = {'answer': ans, 'left': remaining}
+    
+    bot.send_message(
+        chat_id,
+        f"🧠 **Бонусный пример ({6 - remaining}/5):**\nСколько будет: **{num1} {op} {num2} = ?**\n*(Награда за правильный ответ: +500 монет)*"
+    )
+
+# Обработчик ответов на бонусные примеры
+@bot.message_handler(func=lambda message: message.from_user.id in user_math_session)
+def check_bonus_math_answer(message):
+    user_id = message.from_user.id
+    
+    try:
+        user_answer = int(message.text.strip())
+    except ValueError:
+        return # Если пользователь пишет обычный текст — хендлер его не трогает
+        
+    session_data = user_math_session[user_id]
+    
+    if user_answer == session_data['answer']:
+        # Начисляем сразу 500 монет в базу данных
+        conn = sqlite3.connect("game.db")
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET coins = coins + 500 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+        
+        bot.send_message(message.chat.id, "✅ **Верно!** На твой счет зачислено **+500 монет** 🪙")
+        
+        # Переходим к следующему примеру
+        remaining = session_data['left'] - 1
+        send_bonus_math_problem(message.chat.id, user_id, remaining)
+    else:
+        bot.send_message(message.chat.id, "❌ **Неправильно!** Попробуй решить этот пример еще раз.")
+            
