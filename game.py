@@ -347,7 +347,7 @@ def shop_action(message):
     bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
     @bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
 
-    def shop_action(message):
+def shop_action(message):
     text = (
         "🏪 **Магазин дилера:**\n\n"
         "1️⃣ **Случайная Легендарная карта** — 10 000 🪙 *(Доступно раз в 3 часа)*\n"
