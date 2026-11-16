@@ -7,8 +7,7 @@ from flask import Flask
 import telebot
 from telebot import types
 
-# Укажите ваш токен прямо здесь в кавычках:
-TOKEN = "9108370532:AAEKowwNxOn48XIZg_mhmmjmkdn-DtvPTLs"
+TOKEN = "9108370532:AAFi5CS_gEqDYTqbpdErx3XFmPpzsx6s9tU"  # Укажите ваш токен в кавычках
 bot = telebot.TeleBot(TOKEN)
 
 # ================= DATABASE SETUP =================
@@ -59,41 +58,31 @@ init_db()
 
 # ================= CARDS DATABASE =================
 CARDS = {
-    # БОЕВЫЕ КАРТЫ (11 штук)
     "goblin_combat": {"name": "Гоблин", "rarity": "Common", "type": "combat", "emoji": "🟢", "atk": 5, "hp": 20, "shards": 5, "desc": "Боевой задир."},
     "knight_combat": {"name": "Рыцарь", "rarity": "Common", "type": "combat", "emoji": "🟢", "atk": 8, "hp": 25, "shards": 5, "desc": "Защитник линии."},
     "skeleton_combat": {"name": "Скелет", "rarity": "Common", "type": "combat", "emoji": "🟢", "atk": 6, "hp": 15, "shards": 5, "desc": "Хрупкий боец."},
-    
     "elf_combat": {"name": "Эльф", "rarity": "Rare", "type": "combat", "emoji": "🔵", "atk": 14, "hp": 30, "shards": 15, "desc": "Меткий стрелок."},
     "dwarf_combat": {"name": "Гном", "rarity": "Rare", "type": "combat", "emoji": "🔵", "atk": 12, "hp": 45, "shards": 15, "desc": "Крепкий молотобоец."},
     "orc_combat": {"name": "Орк", "rarity": "Rare", "type": "combat", "emoji": "🔵", "atk": 20, "hp": 35, "shards": 15, "desc": "Яростный варвар."},
-    
     "healer_mage": {"name": "Маг Целитель", "rarity": "Epic", "type": "combat", "emoji": "🟠", "atk": 22, "hp": 55, "shards": 40, "desc": "Держит фронт магией."},
     "battle_mage": {"name": "Боевой Маг", "rarity": "Epic", "type": "combat", "emoji": "🟠", "atk": 32, "hp": 45, "shards": 40, "desc": "Мощный стихийный урон."},
-    
     "dragon": {"name": "Дракон", "rarity": "Legendary", "type": "combat", "emoji": "🟣", "atk": 55, "hp": 120, "shards": 100, "desc": "Огнедышащий ужас."},
     "king": {"name": "Король", "rarity": "Legendary", "type": "combat", "emoji": "🟣", "atk": 45, "hp": 150, "shards": 100, "desc": "Несокрушимый лидер."},
-    
     "lonely_hero": {"name": "Одинокий Герой", "rarity": "Mythic", "type": "combat", "emoji": "🔴", "atk": 90, "hp": 220, "shards": 300, "desc": "Вершина боевой мощи."},
 
-    # ИГРАЛЬНЫЕ КАРТЫ (11 штук)
     "slime_play": {"name": "Слизь", "rarity": "Common", "type": "play", "emoji": "🟢", "buff": 1, "shards": 5, "pass_desc": "+3% монет с кликов", "shards_pct": 0, "coins_pct": 3, "math_pct": 0, "gacha_disc": 0, "desc": "Липкий бонус."},
     "cat_play": {"name": "Кошка", "rarity": "Common", "type": "play", "emoji": "🟢", "buff": 1, "shards": 5, "pass_desc": "+5% осколков при плавлении", "shards_pct": 5, "coins_pct": 0, "math_pct": 0, "gacha_disc": 0, "desc": "Мурчит на удачу."},
     "pigeon_play": {"name": "Голубь", "rarity": "Common", "type": "play", "emoji": "🟢", "buff": 1, "shards": 5, "pass_desc": "+2% к награде за примеры", "shards_pct": 0, "coins_pct": 0, "math_pct": 2, "gacha_disc": 0, "desc": "Почтовая птица."},
-    
     "poor_play": {"name": "Бедняк", "rarity": "Rare", "type": "play", "emoji": "🔵", "buff": 2, "shards": 15, "pass_desc": "Снижение цены гачи на 1 🪙", "shards_pct": 0, "coins_pct": 0, "math_pct": 0, "gacha_disc": 1, "desc": "Знает цену монете."},
     "fisherman_play": {"name": "Рыбак", "rarity": "Rare", "type": "play", "emoji": "🔵", "buff": 2, "shards": 15, "pass_desc": "+7% монет с кликов", "shards_pct": 0, "coins_pct": 7, "math_pct": 0, "gacha_disc": 0, "desc": "Ловит удачу за хвост."},
     "cook_play": {"name": "Повар", "rarity": "Rare", "type": "play", "emoji": "🔵", "buff": 2, "shards": 15, "pass_desc": "+6% к награде за примеры", "shards_pct": 0, "coins_pct": 0, "math_pct": 6, "gacha_disc": 0, "desc": "Варит гранит науки."},
-    
     "maid_play": {"name": "Горничная", "rarity": "Epic", "type": "play", "emoji": "🟠", "buff": 3, "shards": 40, "pass_desc": "+8% осколков при плавлении", "shards_pct": 8, "coins_pct": 0, "math_pct": 0, "gacha_disc": 0, "desc": "Наводит порядок."},
     "merchant_play": {"name": "Торговец", "rarity": "Epic", "type": "play", "emoji": "🟠", "buff": 3, "shards": 40, "pass_desc": "Снижение цены гачи на 5 🪙", "shards_pct": 0, "coins_pct": 0, "math_pct": 0, "gacha_disc": 5, "desc": "Мастер скидок."},
-    
     "baron_play": {"name": "Барин", "rarity": "Legendary", "type": "play", "emoji": "🟣", "buff": 5, "shards": 100, "pass_desc": "+15% монет с кликов", "shards_pct": 0, "coins_pct": 15, "math_pct": 0, "gacha_disc": 0, "desc": "Благородный доход."},
     "graf_play": {"name": "Граф", "rarity": "Legendary", "type": "play", "emoji": "🟣", "buff": 5, "shards": 100, "pass_desc": "+20% ко всем получаемым монетам", "shards_pct": 0, "coins_pct": 20, "math_pct": 20, "gacha_disc": 0, "desc": "Владелец земель."},
-    
     "jester_play": {"name": "Шут", "rarity": "Mythic", "type": "play", "emoji": "🔴", "buff": 10, "shards": 300, "pass_desc": "15% шанс х3 монет за клик + ре-ролл гачи", "shards_pct": 0, "coins_pct": 0, "math_pct": 0, "gacha_disc": 0, "special": "jester", "desc": "Безумный гений."}
 }
-
+# ================= HELPERS & MAIN HANDLERS =================
 def get_user(user_id):
     conn = sqlite3.connect("game.db", check_same_thread=False)
     cursor = conn.cursor()
@@ -227,6 +216,7 @@ def decks_action(message):
     cursor = conn.cursor()
     cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'combat'", (user_id,))
     combat_deck = cursor.fetchall()
+    
     cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'play'", (user_id,))
     play_deck = cursor.fetchall()
     conn.close()
@@ -320,12 +310,12 @@ def gacha_action(message):
         cursor.execute("UPDATE users SET shards = shards + ? WHERE user_id = ?", (shards_gain, user_id))
     else:
         cursor.execute("INSERT INTO inventory (user_id, card_id, count) VALUES (?, ?, 1)", (user_id, chosen_card_id))
-
-conn.commit()
-conn.close()
+        
+    conn.commit()
+    conn.close()
     
-t_label = "⚔️ Боевая" if card["type"] == "combat" else "🃏 Игральная"
-response = f"🎁 **Вы открыли гачу!\n\n✨ {card['emoji']} ** [{card['rarity']}]\n🛡 **Тип:** {t_label}\n└ {card['desc']}\n"
+    t_label = "⚔️ Боевая" if card["type"] == "combat" else "🃏 Игральная"
+    response = f"🎁 **Вы открыли гачу!\n\n✨ {card['emoji']} ** [{card['rarity']}]\n🛡 **Тип:** {t_label}\n└ {card['desc']}\n"
     if card["type"] == "play":
         response += f"✨ **Бонус:** +{card['buff']} клик | {card['pass_desc']}\n"
     else:
@@ -338,7 +328,7 @@ response = f"🎁 **Вы открыли гачу!\n\n✨ {card['emoji']} ** [{ca
     else:
         response += "\n🎉 Новая карта добавлена в инвентарь!"
         
-bot.send_message(message.chat.id, response, parse_mode="Markdown")
+    bot.send_message(message.chat.id, response, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
 def shop_action(message):
@@ -355,7 +345,22 @@ def shop_action(message):
     )
     markup.add(types.InlineKeyboardButton("🎫 Купить Билет к Сизи (1M)", callback_data="buy_sizi"))
     bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
-
+    @bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
+def shop_action(message):
+    text = (
+        "🏪 **Магазин дилера:**\n\n"
+        "1️⃣ **Случайная Легендарная карта** — 10 000 🪙 *(Доступно раз в 3 часа)*\n"
+        "2️⃣ **Набор из 3 000 осколков** — 5 000 🪙 *(Доступно раз в 1.5 часа)*\n"
+        "3️⃣ **🎫 Билет к Сизи** — 1 000 000 🪙 *(Главная цель игры!)*\n"
+    )
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("Купить Легу (10k)", callback_data="buy_lego"),
+        types.InlineKeyboardButton("Купить Осколки (5k)", callback_data="buy_shards")
+    )
+    markup.add(types.InlineKeyboardButton("🎫 Купить Билет к Сизи (1M)", callback_data="buy_sizi"))
+    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
+# ================= SHOP, MATH, ARENA & FLASK =================
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
 def shop_callback(call):
     user_id = call.from_user.id
@@ -597,7 +602,7 @@ def deck_setup_menu(call):
     filtered_cards = [item for item in inventory if item[0] in CARDS and CARDS[item[0]]["type"] == deck_type]
     
     if not filtered_cards:
-        bot.answer_callback_query(call.id, f"У вас нет карт типа {'Боевая' if deck_type=='combat' else 'Игральная'} в инвентаре!", show_alert=True)
+        bot.answer_callback_query(call.id, "У вас нет карт этого типа в инвентаре!", show_alert=True)
         return
         
     markup = types.InlineKeyboardMarkup()
@@ -675,3 +680,4 @@ def run_flask():
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
     bot.infinity_polling(skip_pending=True)
+            
