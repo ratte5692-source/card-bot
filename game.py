@@ -337,15 +337,7 @@ def shop_action(message):
         "1️⃣ **Случайная Легендарная карта** — 10 000 🪙 *(Доступно раз в 3 часа)*\n"
         "2️⃣ **Набор из 3 000 осколков** — 5 000 🪙 *(Доступно раз в 1.5 часа)*\n"
         "3️⃣ **🎫 Билет к Сизи** — 1 000 000 🪙 *(Главная цель игры!)*\n"
-    )
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("Купить Легу (10k)", callback_data="buy_lego"),
-        types.InlineKeyboardButton("Купить Осколки (5k)", callback_data="buy_shards")
-    )
-    (types.InlineKeyboardButton("🎫 Купить Билет к Сизи (1M)", callback_data="buy_sizi"))
-    (message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
-    @bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
+    
 def shop_action(message):
     text = (
         "🏪 **Магазин дилера:**\n\n"
