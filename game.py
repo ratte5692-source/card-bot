@@ -346,7 +346,8 @@ def shop_action(message):
     markup.add(types.InlineKeyboardButton("🎫 Купить Билет к Сизи (1M)", callback_data="buy_sizi"))
     bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
     @bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
-def shop_action(message):
+
+    def shop_action(message):
     text = (
         "🏪 **Магазин дилера:**\n\n"
         "1️⃣ **Случайная Легендарная карта** — 10 000 🪙 *(Доступно раз в 3 часа)*\n"
@@ -362,6 +363,7 @@ def shop_action(message):
     bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
 # ================= SHOP, MATH, ARENA & FLASK =================
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
+
 def shop_callback(call):
     user_id = call.from_user.id
     coins, shards, _, _, last_lego, last_shards, _, _, _ = get_user(user_id)
@@ -428,6 +430,7 @@ def shop_callback(call):
         bot.send_message(call.message.chat.id, win_text, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text == "🧠 Математический бонус")
+
 def math_action(message):
     user_id = message.from_user.id
     coins, shards, math_count, last_reset, _, _, _, _, _ = get_user(user_id)
@@ -480,6 +483,7 @@ def math_action(message):
     )
 
 @bot.message_handler(func=lambda m: m.text and m.text.lstrip('-').isdigit())
+
 def check_math_answer(message):
     user_id = message.from_user.id
     user_ans = int(message.text)
@@ -511,6 +515,7 @@ def check_math_answer(message):
         bot.send_message(message.chat.id, f"❌ **Неверно!** Правильный ответ: {correct_ans}.", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text == "⚔️ Арена")
+
 def arena_action(message):
     user_id = message.from_user.id
     coins, shards, _, _, _, _, _, arena_stage, last_arena_time = get_user(user_id)
@@ -589,6 +594,7 @@ def arena_action(message):
         )
 
 @bot.callback_query_handler(func=lambda call: call.data in ["deck_combat", "deck_play"])
+
 def deck_setup_menu(call):
     user_id = call.from_user.id
     deck_type = "combat" if call.data == "deck_combat" else "play"
@@ -616,6 +622,7 @@ def deck_setup_menu(call):
     bot.edit_message_text(f"⚙️ Выберите карту для добавления в **{t_name} колоду** (макс. 4):", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("equip_") or call.data.startswith("clear_"))
+
 def deck_modify_callback(call):
     user_id = call.from_user.id
     data = call.data
@@ -670,6 +677,7 @@ def deck_modify_callback(call):
 app = Flask('')
 
 @app.route('/')
+
 def home():
     return "Бот работает 24/7!"
 
