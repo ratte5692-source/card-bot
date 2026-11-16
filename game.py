@@ -362,9 +362,7 @@ def check_bonus_math_answer(message):
     else:
         bot.send_message(message.chat.id, "❌ Неправильно! Попробуй еще раз.")
 
-bot.infinity_polling()
-
-# Микро-сервер для того, чтобы Render не ругался на порты и давал бесплатный тариф
+# 1. Сначала поднимаем Flask-сервер в фоне
 from flask import Flask
 import threading
 import os
@@ -380,6 +378,9 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# Запускаем веб-сервер в параллельном потоке, чтобы он не мешал нашему боту
+# Запускаем веб-сервер в параллельном потоке
 threading.Thread(target=run_flask).start()
 
+# 2. А в самом конце запускаем бота
+bot.infinity_polling()
+    
