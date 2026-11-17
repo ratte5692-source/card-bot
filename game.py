@@ -11,7 +11,7 @@ from telebot import types
 # =====================================================================
 # НАСТРОЙКИ И КОНСТАНТЫ
 # =====================================================================
-TOKEN = os.getenv("8537617801:AAExncjJBrFKlgXxpUAeZ6QTNVfMUPQ1SVQ")
+TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 DB_PATH = "baron_game.db"
