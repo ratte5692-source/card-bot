@@ -1,3 +1,4 @@
+import json
 import os
 import random
 import sqlite3
@@ -7,675 +8,869 @@ from flask import Flask
 import telebot
 from telebot import types
 
-TOKEN = "9108370532:AAFi5CS_gEqDYTqbpdErx3XFmPpzsx6s9tU"  # Укажите ваш токен в кавычках
+# =====================================================================
+# НАСТРОЙКИ И КОНСТАНТЫ
+# =====================================================================
+TOKEN = os.getenv("8537617801:AAExncjJBrFKlgXxpUAeZ6QTNVfMUPQ1SVQ")
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
+DB_PATH = "baron_game.db"
 
-# ================= DATABASE SETUP =================
-def init_db():
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        coins INTEGER DEFAULT 500,
-        shards INTEGER DEFAULT 0,
-        math_count INTEGER DEFAULT 0,
-        last_math_reset REAL DEFAULT 0,
-        last_shop_lego REAL DEFAULT 0,
-        last_shop_shards REAL DEFAULT 0,
-        story_read INTEGER DEFAULT 0,
-        arena_stage INTEGER DEFAULT 1,
-        last_arena_time REAL DEFAULT 0
-    )""")
-    
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS inventory (
-        user_id INTEGER,
-        card_id TEXT,
-        count INTEGER,
-        PRIMARY KEY (user_id, card_id)
-    )""")
-    
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS active_deck (
-        user_id INTEGER,
-        card_id TEXT,
-        type TEXT,
-        PRIMARY KEY (user_id, card_id)
-    )""")
-    
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS math_states (
-        user_id INTEGER PRIMARY KEY,
-        answer INTEGER
-    )""")
-    
-    conn.commit()
-    conn.close()
+# Шансы выпадения и награда в обломках за повторку
+RARITY_WEIGHTS = {"Об": 55, "Ред": 35, "Лег": 9, "Миф": 1}
+SHARDS_BY_RARITY = {"Об": 5, "Ред": 10, "Лег": 25, "Миф": 50}
 
-init_db()
-
-# ================= CARDS DATABASE =================
-CARDS = {
-    "goblin_combat": {"name": "Гоблин", "rarity": "Common", "type": "combat", "emoji": "🟢", "atk": 5, "hp": 20, "shards": 5, "desc": "Боевой задир."},
-    "knight_combat": {"name": "Рыцарь", "rarity": "Common", "type": "combat", "emoji": "🟢", "atk": 8, "hp": 25, "shards": 5, "desc": "Защитник линии."},
-    "skeleton_combat": {"name": "Скелет", "rarity": "Common", "type": "combat", "emoji": "🟢", "atk": 6, "hp": 15, "shards": 5, "desc": "Хрупкий боец."},
-    "elf_combat": {"name": "Эльф", "rarity": "Rare", "type": "combat", "emoji": "🔵", "atk": 14, "hp": 30, "shards": 15, "desc": "Меткий стрелок."},
-    "dwarf_combat": {"name": "Гном", "rarity": "Rare", "type": "combat", "emoji": "🔵", "atk": 12, "hp": 45, "shards": 15, "desc": "Крепкий молотобоец."},
-    "orc_combat": {"name": "Орк", "rarity": "Rare", "type": "combat", "emoji": "🔵", "atk": 20, "hp": 35, "shards": 15, "desc": "Яростный варвар."},
-    "healer_mage": {"name": "Маг Целитель", "rarity": "Epic", "type": "combat", "emoji": "🟠", "atk": 22, "hp": 55, "shards": 40, "desc": "Держит фронт магией."},
-    "battle_mage": {"name": "Боевой Маг", "rarity": "Epic", "type": "combat", "emoji": "🟠", "atk": 32, "hp": 45, "shards": 40, "desc": "Мощный стихийный урон."},
-    "dragon": {"name": "Дракон", "rarity": "Legendary", "type": "combat", "emoji": "🟣", "atk": 55, "hp": 120, "shards": 100, "desc": "Огнедышащий ужас."},
-    "king": {"name": "Король", "rarity": "Legendary", "type": "combat", "emoji": "🟣", "atk": 45, "hp": 150, "shards": 100, "desc": "Несокрушимый лидер."},
-    "lonely_hero": {"name": "Одинокий Герой", "rarity": "Mythic", "type": "combat", "emoji": "🔴", "atk": 90, "hp": 220, "shards": 300, "desc": "Вершина боевой мощи."},
-
-    "slime_play": {"name": "Слизь", "rarity": "Common", "type": "play", "emoji": "🟢", "buff": 1, "shards": 5, "pass_desc": "+3% монет с кликов", "shards_pct": 0, "coins_pct": 3, "math_pct": 0, "gacha_disc": 0, "desc": "Липкий бонус."},
-    "cat_play": {"name": "Кошка", "rarity": "Common", "type": "play", "emoji": "🟢", "buff": 1, "shards": 5, "pass_desc": "+5% осколков при плавлении", "shards_pct": 5, "coins_pct": 0, "math_pct": 0, "gacha_disc": 0, "desc": "Мурчит на удачу."},
-    "pigeon_play": {"name": "Голубь", "rarity": "Common", "type": "play", "emoji": "🟢", "buff": 1, "shards": 5, "pass_desc": "+2% к награде за примеры", "shards_pct": 0, "coins_pct": 0, "math_pct": 2, "gacha_disc": 0, "desc": "Почтовая птица."},
-    "poor_play": {"name": "Бедняк", "rarity": "Rare", "type": "play", "emoji": "🔵", "buff": 2, "shards": 15, "pass_desc": "Снижение цены гачи на 1 🪙", "shards_pct": 0, "coins_pct": 0, "math_pct": 0, "gacha_disc": 1, "desc": "Знает цену монете."},
-    "fisherman_play": {"name": "Рыбак", "rarity": "Rare", "type": "play", "emoji": "🔵", "buff": 2, "shards": 15, "pass_desc": "+7% монет с кликов", "shards_pct": 0, "coins_pct": 7, "math_pct": 0, "gacha_disc": 0, "desc": "Ловит удачу за хвост."},
-    "cook_play": {"name": "Повар", "rarity": "Rare", "type": "play", "emoji": "🔵", "buff": 2, "shards": 15, "pass_desc": "+6% к награде за примеры", "shards_pct": 0, "coins_pct": 0, "math_pct": 6, "gacha_disc": 0, "desc": "Варит гранит науки."},
-    "maid_play": {"name": "Горничная", "rarity": "Epic", "type": "play", "emoji": "🟠", "buff": 3, "shards": 40, "pass_desc": "+8% осколков при плавлении", "shards_pct": 8, "coins_pct": 0, "math_pct": 0, "gacha_disc": 0, "desc": "Наводит порядок."},
-    "merchant_play": {"name": "Торговец", "rarity": "Epic", "type": "play", "emoji": "🟠", "buff": 3, "shards": 40, "pass_desc": "Снижение цены гачи на 5 🪙", "shards_pct": 0, "coins_pct": 0, "math_pct": 0, "gacha_disc": 5, "desc": "Мастер скидок."},
-    "baron_play": {"name": "Барин", "rarity": "Legendary", "type": "play", "emoji": "🟣", "buff": 5, "shards": 100, "pass_desc": "+15% монет с кликов", "shards_pct": 0, "coins_pct": 15, "math_pct": 0, "gacha_disc": 0, "desc": "Благородный доход."},
-    "graf_play": {"name": "Граф", "rarity": "Legendary", "type": "play", "emoji": "🟣", "buff": 5, "shards": 100, "pass_desc": "+20% ко всем получаемым монетам", "shards_pct": 0, "coins_pct": 20, "math_pct": 20, "gacha_disc": 0, "desc": "Владелец земель."},
-    "jester_play": {"name": "Шут", "rarity": "Mythic", "type": "play", "emoji": "🔴", "buff": 10, "shards": 300, "pass_desc": "15% шанс х3 монет за клик + ре-ролл гачи", "shards_pct": 0, "coins_pct": 0, "math_pct": 0, "gacha_disc": 0, "special": "jester", "desc": "Безумный гений."}
+# Все 18 отрядов (8 придворных + 10 боевых)
+UNITS = {
+    # --- ПРИДВОРНЫЕ (макс. 3 в отряде) ---
+    "peasant": {
+        "name": "Крестьянин",
+        "type": "court",
+        "rarity": "Об",
+        "desc": "+25 монет за каждое Поле в замке раз в час.",
+    },
+    "fisherman": {
+        "name": "Рыбак",
+        "type": "court",
+        "rarity": "Об",
+        "desc": "Скидка на билет-скип: теперь стоит 90 монет вместо 100.",
+    },
+    "merchant": {
+        "name": "Торговец",
+        "type": "court",
+        "rarity": "Об",
+        "desc": "+1 дополнительный пример при решении математики.",
+    },
+    "artisan": {
+        "name": "Ремесленник",
+        "type": "court",
+        "rarity": "Ред",
+        "desc": "Один из вопросов викторины становится лёгким.",
+    },
+    "barin": {
+        "name": "Барин",
+        "type": "court",
+        "rarity": "Ред",
+        "desc": "+50 монет за каждый Трактир в замке раз в час.",
+    },
+    "miner": {
+        "name": "Шахтёр",
+        "type": "court",
+        "rarity": "Лег",
+        "desc": "+100 монет за Шахту раз в 1.5 часа.",
+    },
+    "maid": {
+        "name": "Горничная",
+        "type": "court",
+        "rarity": "Лег",
+        "desc": "+1 пример в математике, +1 вопрос в викторине, +25 монет за каждый Трактир в час.",
+    },
+    "jester": {
+        "name": "Шут",
+        "type": "court",
+        "rarity": "Миф",
+        "desc": "20% шанс на повторный бесплатный прокрут при выпадении отряда, +25 монет за каждое здание в замке, +1 пример в математике.",
+    },
+    # --- БОЕВЫЕ (макс. 4 в отряде) ---
+    "skeleton": {
+        "name": "Скелет",
+        "type": "battle",
+        "rarity": "Об",
+        "row": "front",
+        "hp": 60,
+        "atk": 45,
+        "desc": "Ближний. Хрупкий, но высокий урон.",
+    },
+    "warrior": {
+        "name": "Воин",
+        "type": "battle",
+        "rarity": "Об",
+        "row": "front",
+        "hp": 110,
+        "atk": 30,
+        "desc": "Ближний. Сбалансированные характеристики.",
+    },
+    "goblin": {
+        "name": "Гоблин",
+        "type": "battle",
+        "rarity": "Об",
+        "row": "front",
+        "hp": 65,
+        "atk": 35,
+        "desc": "Ближний. Хрупкий, много урона, бьёт сразу по двоим.",
+    },
+    "dwarf": {
+        "name": "Гном",
+        "type": "battle",
+        "rarity": "Ред",
+        "row": "front",
+        "hp": 220,
+        "atk": 25,
+        "desc": "Ближний. Очень жирный танк со средним уроном.",
+    },
+    "orc": {
+        "name": "Орк",
+        "type": "battle",
+        "rarity": "Ред",
+        "row": "front",
+        "hp": 140,
+        "atk": 40,
+        "desc": "Ближний. Равномерный; если остался один в отряде — урон х2.",
+    },
+    "elf": {
+        "name": "Эльф",
+        "type": "battle",
+        "rarity": "Ред",
+        "row": "back",
+        "hp": 95,
+        "atk": 50,
+        "desc": "Дальний. Сбалансированный, но повышенный урон.",
+    },
+    "war_mage": {
+        "name": "Маг войны",
+        "type": "battle",
+        "rarity": "Лег",
+        "row": "back",
+        "hp": 85,
+        "atk": 30,
+        "desc": "Дальний. Среднее здоровье, урон по троим противникам сразу.",
+    },
+    "healer_mage": {
+        "name": "Целебный Маг",
+        "type": "battle",
+        "rarity": "Лег",
+        "row": "back",
+        "hp": 180,
+        "atk": 0,
+        "desc": "Дальний. Не бьёт, жирный. При смерти союзника 25% шанс воскресить его.",
+    },
+    "king": {
+        "name": "Король",
+        "type": "battle",
+        "rarity": "Миф",
+        "row": "front",
+        "hp": 320,
+        "atk": 55,
+        "desc": "Ближний. Много HP. Пока он жив, весь урон врагов идёт только в него.",
+    },
+    "griffin": {
+        "name": "Грифон",
+        "type": "battle",
+        "rarity": "Миф",
+        "row": "back",
+        "hp": 120,
+        "atk": 65,
+        "desc": "Дальний. Если весь ближний ряд пал, перелетает в первый ряд как ближний.",
+    },
 }
-# ================= HELPERS & MAIN HANDLERS =================
-def get_user(user_id):
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT coins, shards, math_count, last_math_reset, last_shop_lego, last_shop_shards, story_read, arena_stage, last_arena_time FROM users WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
+
+CASTLE_UPGRADE_COSTS = {1: 1000, 2: 2200, 3: 3500, 4: 5000}
+
+HARD_QUIZ = [
+    ("В каком году произошло Крещение Руси?", ["988", "882", "1054", "1147"], "988"),
+    ("Какая планета Солнечной системы самая горячая?", ["Венера", "Меркурий", "Марс", "Юпитер"], "Венера"),
+    ("Сколько хромосом в здоровой клетке человека?", ["46", "48", "44", "23"], "46"),
+    ("Кто написал роман «Преступление и наказание»?", ["Достоевский", "Толстой", "Чехов", "Гоголь"], "Достоевский"),
+    ("Какой химический элемент обозначается символом Au?", ["Золото", "Серебро", "Алюминий", "Медь"], "Золото"),
+    ("Столица Австралии?", ["Канберра", "Сидней", "Мельбурн", "Перт"], "Канберра"),
+    ("Какое самое глубокое озеро в мире?", ["Байкал", "Танганьика", "Виктория", "Каспийское"], "Байкал"),
+]
+
+EASY_QUIZ = [
+    ("Сколько дней в високосном году?", ["366", "365", "364", "360"], "366"),
+    ("Какого цвета трава летом?", ["Зелёного", "Синего", "Красного", "Фиолетового"], "Зелёного"),
+    ("Сколько лап у паука?", ["8", "6", "4", "10"], "8"),
+    ("Какая столица России?", ["Москва", "Санкт-Петербург", "Казань", "Сочи"], "Москва"),
+]
+
+ARENA_STAGES = {
+    1: {"name": "Этаж 1: Застава худых земель I", "reward": 250, "enemies": [("skeleton", 1.0), ("skeleton", 1.0), ("elf", 0.8)]},
+    2: {"name": "Этаж 2: Застава худых земель II", "reward": 300, "enemies": [("skeleton", 1.1), ("warrior", 1.0), ("elf", 0.9)]},
+    3: {"name": "Этаж 3: Застава худых земель III", "reward": 350, "enemies": [("warrior", 1.1), ("skeleton", 1.2), ("elf", 1.0)]},
+    4: {"name": "БОСС 1: Разбойник «Ржавый Клык»", "reward": 800, "enemies": [("goblin", 1.0), ("goblin", 1.0), ("goblin", 1.0), ("goblin_boss", 1.0)]},
+    5: {"name": "Этаж 4: Выжженные равнины I", "reward": 400, "enemies": [("dwarf", 0.9), ("goblin", 1.1), ("goblin", 1.1), ("war_mage", 0.9)]},
+    6: {"name": "Этаж 5: Выжженные равнины II", "reward": 450, "enemies": [("dwarf", 1.0), ("goblin", 1.2), ("warrior", 1.2), ("war_mage", 1.0)]},
+    7: {"name": "Этаж 6: Выжженные равнины III", "reward": 500, "enemies": [("dwarf", 1.1), ("goblin", 1.2), ("goblin", 1.2), ("war_mage", 1.1)]},
+    8: {"name": "БОСС 2: Предатель «Капитан Ворц»", "reward": 1200, "enemies": [("warrior", 1.3), ("dwarf", 1.3), ("vortz_boss", 1.0)]},
+    9: {"name": "Этаж 7: Ущелье орков I", "reward": 550, "enemies": [("orc", 1.0), ("orc", 1.0), ("elf", 1.2), ("elf", 1.2)]},
+    10: {"name": "Этаж 8: Ущелье орков II", "reward": 600, "enemies": [("orc", 1.1), ("orc", 1.1), ("elf", 1.3), ("elf", 1.3)]},
+    11: {"name": "Этаж 9: Ущелье орков III", "reward": 650, "enemies": [("orc", 1.2), ("orc", 1.2), ("elf", 1.3), ("war_mage", 1.2)]},
+    12: {"name": "БОСС 3: Некромант «Мортиус Теневой»", "reward": 1800, "enemies": [("skeleton", 1.4), ("skeleton", 1.4), ("skeleton", 1.4), ("mortius_boss", 1.0)]},
+    13: {"name": "Этаж 10: Цитадель изгнанников I", "reward": 750, "enemies": [("dwarf", 1.3), ("orc", 1.2), ("healer_mage", 1.0), ("war_mage", 1.2)]},
+    14: {"name": "Этаж 11: Цитадель изгнанников II", "reward": 800, "enemies": [("dwarf", 1.4), ("orc", 1.3), ("healer_mage", 1.1), ("war_mage", 1.3)]},
+    15: {"name": "Этаж 12: Цитадель изгнанников III", "reward": 900, "enemies": [("dwarf", 1.4), ("orc", 1.4), ("healer_mage", 1.2), ("war_mage", 1.3)]},
+    16: {"name": "БОСС 4: Генерал «Железнорук»", "reward": 2500, "enemies": [("orc", 1.4), ("orc", 1.4), ("healer_mage", 1.3), ("ironhand_boss", 1.0)]},
+    17: {"name": "Этаж 13: Авангард Тени", "reward": 1000, "enemies": [("dwarf", 1.5), ("dwarf", 1.5), ("war_mage", 1.5), ("war_mage", 1.5)]},
+    18: {"name": "Этаж 14: Кровавая Стая", "reward": 1100, "enemies": [("orc", 1.5), ("orc", 1.5), ("orc", 1.5), ("healer_mage", 1.4)]},
+    19: {"name": "Этаж 15: Элитный легион", "reward": 1300, "enemies": [("dwarf", 1.6), ("orc", 1.6), ("war_mage", 1.6), ("healer_mage", 1.5)]},
+    20: {"name": "ФИНАЛЬНЫЙ БОСС 5: Узурпатор «Лорд Вейн»", "reward": 5000, "enemies": [("vein_king_boss", 1.0), ("war_mage", 1.6), ("war_mage", 1.6), ("healer_mage", 1.5)]},
+}
+
+BOSS_TEMPLATES = {
+    "goblin_boss": {"name": "Ржавый Клык (Босс)", "row": "front", "hp": 180, "atk": 65, "ability": "goblin"},
+    "vortz_boss": {"name": "Капитан Ворц (Босс)", "row": "front", "hp": 420, "atk": 60, "ability": "none"},
+    "mortius_boss": {"name": "Мортиус Теневой (Босс)", "row": "back", "hp": 280, "atk": 50, "ability": "necro"},
+    "ironhand_boss": {"name": "Генерал Железнорук (Босс)", "row": "front", "hp": 480, "atk": 75, "ability": "orc"},
+    "vein_king_boss": {"name": "Лорд Вейн (Финальный Босс)", "row": "front", "hp": 650, "atk": 85, "ability": "king"},
+}
+
+active_tasks = {}
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            coins INTEGER DEFAULT 300,
+            shards INTEGER DEFAULT 0,
+            skip_tickets INTEGER DEFAULT 0,
+            wife_ticket INTEGER DEFAULT 0,
+            castle_level INTEGER DEFAULT 1,
+            fields INTEGER DEFAULT 0,
+            taverns INTEGER DEFAULT 0,
+            mines INTEGER DEFAULT 0,
+            last_field_claim REAL DEFAULT 0,
+            last_tavern_claim REAL DEFAULT 0,
+            last_mine_claim REAL DEFAULT 0,
+            last_math_time REAL DEFAULT 0,
+            last_quiz_time REAL DEFAULT 0,
+            last_shop_roll REAL DEFAULT 0,
+            last_shop_skip REAL DEFAULT 0,
+            story_stage INTEGER DEFAULT 1,
+            promo_used INTEGER DEFAULT 0,
+            owned_units TEXT DEFAULT '[]',
+            court_squad TEXT DEFAULT '[]',
+            battle_squad TEXT DEFAULT '[]'
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def get_user(user_id, username="Барон"):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
     if not row:
-        cursor.execute("INSERT INTO users (user_id, coins, shards, story_read, arena_stage) VALUES (?, 500, 0, 0, 1)", (user_id,))
+        now = time.time()
+        c.execute("""
+            INSERT INTO users (user_id, username, last_field_claim, last_tavern_claim, last_mine_claim)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, username, now, now, now))
         conn.commit()
-        row = (500, 0, 0, 0, 0, 0, 0, 1, 0)
+        c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        row = c.fetchone()
     conn.close()
-    return row
+    return dict(row)
 
-def get_click_power(user_id):
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'play'", (user_id,))
-    active_cards = cursor.fetchall()
+def update_user(user_id, **kwargs):
+    if not kwargs:
+        return
+    conn = get_db()
+    c = conn.cursor()
+    cols = ", ".join(f"{k} = ?" for k in kwargs)
+    vals = list(kwargs.values()) + [user_id]
+    c.execute(f"UPDATE users SET {cols} WHERE user_id = ?", vals)
+    conn.commit()
     conn.close()
-    
-    power = 1
-    for (card_id,) in active_cards:
-        if card_id in CARDS and "buff" in CARDS[card_id]:
-            power += CARDS[card_id]["buff"]
-    return power
 
-def get_total_bonuses(user_id):
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'play'", (user_id,))
-    active_cards = cursor.fetchall()
-    conn.close()
-    
-    coins_pct = shards_pct = math_pct = gacha_disc = 0
-    has_jester = False
-    
-    for (card_id,) in active_cards:
-        if card_id in CARDS:
-            c = CARDS[card_id]
-            coins_pct += c.get("coins_pct", 0)
-            shards_pct += c.get("shards_pct", 0)
-            math_pct += c.get("math_pct", 0)
-            gacha_disc += c.get("gacha_disc", 0)
-            if c.get("special") == "jester":
-                has_jester = True
-                
-    return coins_pct, shards_pct, math_pct, gacha_disc, has_jester
+def get_court_squad(user):
+    return json.loads(user["court_squad"])
 
-def main_keyboard():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row("👉 Кликнуть", "📖 Колоды")
-    markup.row("🎰 Гача", "🏪 Магазин")
-    markup.row("🧠 Математический бонус", "⚔️ Арена")
-    markup.row("🎒 Инвентарь", "📚 Каталог")
-    return markup
+def get_battle_squad(user):
+    return json.loads(user["battle_squad"])
 
+def get_owned_units(user):
+    return json.loads(user["owned_units"])
+
+def format_time_left(seconds):
+    if seconds <= 0:
+        return "Готово!"
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    if h > 0:
+        return f"{h}ч {m}м"
+    return f"{m}м {s}с"
+
+def main_menu_keyboard():
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    kb.add(
+        types.KeyboardButton("🎰 Лавка прокрутки"),
+        types.KeyboardButton("⚔️ Арена"),
+        types.KeyboardButton("📜 Задания"),
+        types.KeyboardButton("🛡 Отряды"),
+        types.KeyboardButton("🎒 Инвентарь"),
+        types.KeyboardButton("🏪 Магазин"),
+        types.KeyboardButton("📖 Каталог"),
+        types.KeyboardButton("🏰 Замок"),
+        types.KeyboardButton("🎟 Коды"),
+        types.KeyboardButton("👑 Сюжет и Цель")
+    )
+    return kb
+
+# =====================================================================
+# /START И СЮЖЕТ
+# =====================================================================
 @bot.message_handler(commands=['start'])
-def start_cmd(message):
-    user_id = message.from_user.id
-    coins, shards, _, _, _, _, story_read, _, _ = get_user(user_id)
-    
-    if not story_read:
-        conn = sqlite3.connect("game.db", check_same_thread=False)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET story_read = 1 WHERE user_id = ?", (user_id,))
-        conn.commit()
-        conn.close()
-        
-        story_text = (
-            "📜 **Лор игры:**\n\n"
-            "Вы — 12-летний оболтус, сосланный строгим отцом работать в бескрайние поля средневекового мира магии.\n"
-            "Но тяжелый физический труд вас совершенно не интересовал. Всё ваше сердце было отдано прекрасной девочке по имени Сизи, ради которой хотелось свернуть горы.\n"
-            "Отец поставил условие: *«Хочешь быть с ней — накопи 1 миллион монет честным трудом!»*\n\n"
-            "К счастью, вы были мастером в популярной в те времена карточной магии, так что пахать поля вы и не думали. Ваша цель — собрать колоды, разбогатеть на карточных боях и купить заветный билет к Сизи!"
-        )
-        bot.send_message(message.chat.id, story_text, parse_mode="Markdown")
-        
-    bot.send_message(message.chat.id, "🎮 Главное меню:", reply_markup=main_keyboard(), parse_mode="Markdown")
-
-@bot.message_handler(func=lambda m: m.text == "👉 Кликнуть")
-def click_action(message):
-    user_id = message.from_user.id
-    coins, shards, _, _, _, _, _, _, _ = get_user(user_id)
-    power = get_click_power(user_id)
-    coins_pct, _, _, _, has_jester = get_total_bonuses(user_id)
-    
-    earned = power
-    if coins_pct > 0:
-        earned = int(earned * (1 + coins_pct / 100))
-    if has_jester and random.random() < 0.15:
-        earned *= 3
-        bot.send_message(message.chat.id, "🃏 *Сработал Шут! Клик принес в 3 раза больше монет!*", parse_mode="Markdown")
-        
-    new_coins = coins + earned
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET coins = ? WHERE user_id = ?", (new_coins, user_id))
-    conn.commit()
-    conn.close()
-    
-    bot.send_message(message.chat.id, f"⚡ Вы кликнули и получили **+{earned} монет**! 🪙 Баланс: {new_coins}", parse_mode="Markdown")
-
-@bot.message_handler(func=lambda m: m.text == "🎒 Инвентарь")
-def inventory_action(message):
-    user_id = message.from_user.id
-    coins, shards, _, _, _, _, _, _, _ = get_user(user_id)
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    # Удаляем пустые позиции и выводим только то, что есть (> 0)
-    cursor.execute("DELETE FROM inventory WHERE count <= 0")
-    conn.commit()
-    
-    cursor.execute("SELECT card_id, count FROM inventory WHERE user_id = ? AND count > 0", (user_id,))
-    items = cursor.fetchall()
-    conn.close()
-    
-    text = f"🎒 **Ваш инвентарь:**\n🪙 Монеты: {coins:,}\n💎 Осколки: {shards:,}\n\n**Карты:**\n"
-    if not items:
-        text += "*(пусто)*"
-    else:
-        for card_id, count in items:
-            if card_id in CARDS:
-                c = CARDS[card_id]
-                t_label = "⚔️ Боевая" if c["type"] == "combat" else "🃏 Игральная"
-                text += f"• {c['emoji']} {c['name']} x{count} [{t_label}]\n"
-                
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-    
-
-@bot.message_handler(func=lambda m: m.text == "📖 Колоды")
-def decks_action(message):
-    user_id = message.from_user.id
-    power = get_click_power(user_id)
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'combat'", (user_id,))
-    combat_deck = cursor.fetchall()
-    
-    cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'play'", (user_id,))
-    play_deck = cursor.fetchall()
-    conn.close()
-    
-    text = f"🛡 **Ваши колоды (Максимум по 4 карты):**\n\n⚔️ **Боевая колода (для Арены):**\n"
-    if not combat_deck:
-        text += "  *(пусто)*\n"
-    else:
-        for card_id, in combat_deck:
-            if card_id in CARDS:
-                c = CARDS[card_id]
-                text += f"  • {c['emoji']} {c['name']} (АТК: {c['atk']}, ХП: {c['hp']})\n"
-                
-    text += f"\n🃏 **Игральная колода (сила клика: +{power}):**\n"
-    if not play_deck:
-        text += "  *(пусто)*\n"
-    else:
-        for card_id, in play_deck:
-            if card_id in CARDS:
-                c = CARDS[card_id]
-                text += f"  • {c['emoji']} {c['name']} (+{c['buff']} клик)\n"
-                
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("⚙️ Настроить Боевую", callback_data="deck_combat"),
-        types.InlineKeyboardButton("⚙️ Настроить Игральную", callback_data="deck_play")
+def cmd_start(message):
+    user = get_user(message.from_user.id, message.from_user.first_name)
+    lore_text = (
+        f"🏰 **Добро пожаловать в худые земли, Барон {user['username']}!**\n\n"
+        "Коварный узурпатор Лорд Вейн оболгал тебя и сослал в глушь. Твоя любимая жена осталась в столице.\n"
+        "Чтобы вернуться к ней, тебе нужно:\n"
+        "1️⃣ Собрать непобедимый отряд и **полностью пройти Сюжетную Арену (15 этажей и 5 боссов)**.\n"
+        "2️⃣ Накопить богатства и **купить в Магазине «Билет к жене»** (50 000 монет).\n\n"
+        f"💰 Твой капитал: **{user['coins']} монет** | 🧩 Обломки: **{user['shards']}**"
     )
-    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
+    bot.send_message(message.chat.id, lore_text, parse_mode="Markdown", reply_markup=main_menu_keyboard())
 
-@bot.message_handler(func=lambda m: m.text == "📚 Каталог")
-def catalog_action(message):
-    text = "📚 **Каталог всех карт:**\n\n"
-    for cid, c in CARDS.items():
-        t_label = "⚔️ Боевая" if c["type"] == "combat" else "🃏 Игральная"
-        if c["type"] == "combat":
-            stats = f"АТК: {c['atk']} | ХП: {c['hp']}"
-        else:
-            stats = f"Клик: +{c['buff']} | {c['pass_desc']}"
-        text += f"{c['emoji']} **{c['name']}** [{c['rarity']}] ({t_label})\n   └ {stats}\n\n"
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda m: m.text == "🎰 Гача")
-def gacha_action(message):
-    user_id = message.from_user.id
-    coins, shards, _, _, _, _, _, _, _ = get_user(user_id)
-    _, _, _, gacha_disc, has_jester = get_total_bonuses(user_id)
-    
-    cost = max(10, 100 - gacha_disc)
-    if coins < cost:
-        bot.send_message(message.chat.id, f"❌ Не хватает монет! Нужно {cost} 🪙.")
-        return
-        
-    free_roll = False
-    if has_jester and random.random() < 0.15:
-        free_roll = True
-        
-    final_coins = coins if free_roll else coins - cost
-    
-    roll = random.random() * 100
-    if roll < 0.1:
-        rarity = "Mythic"
-    elif roll < 5.0:
-        rarity = "Legendary"
-    elif roll < 20.0:
-        rarity = "Epic"
-    elif roll < 55.0:
-        rarity = "Rare"
-    else:
-        rarity = "Common"
-        
-    rarity_cards = [cid for cid, c in CARDS.items() if c["rarity"] == rarity]
-    chosen_card_id = random.choice(rarity_cards)
-    card = CARDS[chosen_card_id]
-    
-    _, shards_pct, _, _, _ = get_total_bonuses(user_id)
-    shards_gain = card["shards"]
-    if shards_pct > 0:
-        shards_gain = int(shards_gain * (1 + shards_pct / 100))
-        
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET coins = ? WHERE user_id = ?", (final_coins, user_id))
-    
-    cursor.execute("SELECT count FROM inventory WHERE user_id = ? AND card_id = ?", (user_id, chosen_card_id))
-    row = cursor.fetchone()
-    
-    is_duplicate = False
-    if row:
-        is_duplicate = True
-        cursor.execute("UPDATE inventory SET count = count + 1 WHERE user_id = ? AND card_id = ?", (user_id, chosen_card_id))
-        cursor.execute("UPDATE users SET shards = shards + ? WHERE user_id = ?", (shards_gain, user_id))
-    else:
-        cursor.execute("INSERT INTO inventory (user_id, card_id, count) VALUES (?, ?, 1)", (user_id, chosen_card_id))
-        
-    conn.commit()
-    conn.close()
-    
-    t_label = "⚔️ Боевая" if card["type"] == "combat" else "🃏 Игральная"
-    response = f"🎁 **Вы открыли гачу!\n\n✨ {card['emoji']} ** [{card['rarity']}]\n🛡 **Тип:** {t_label}\n└ {card['desc']}\n"
-    if card["type"] == "play":
-        response += f"✨ **Бонус:** +{card['buff']} клик | {card['pass_desc']}\n"
-    else:
-        response += f"⚔️ **Статы:** АТК {card['atk']} / ХП {card['hp']}\n"
-        
-    if free_roll:
-        response += "\n🃏 *Сработал бонус Шута! Бесплатный ролл!*"
-    if is_duplicate:
-        response += f"\n♻️ Дубликат! Расплавлено в **+{shards_gain} осколков** 💎."
-    else:
-        response += "\n🎉 Новая карта добавлена в инвентарь!"
-        
-    bot.send_message(message.chat.id, response, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
-def shop_action(message):
+@bot.message_handler(func=lambda m: m.text == "👑 Сюжет и Цель")
+def menu_lore(message):
+    user = get_user(message.from_user.id)
+    arena_done = "✅ Пройдена!" if user["story_stage"] > 20 else f"❌ Этап {user['story_stage']}/20"
+    ticket_done = "✅ Куплен!" if user["wife_ticket"] else "❌ Не куплен (50 000 монет)"
     text = (
-        "🏪 **Магазин дилера:**\n\n"
-        "1️⃣ **Случайная Легендарная карта** — 10 000 🪙 *(Доступно раз в 3 часа)*\n"
-        "2️⃣ **Набор из 3 000 осколков** — 5 000 🪙 *(Доступно раз в 1.5 часа)*\n"
-        "3️⃣ **🎫 Билет к Сизи** — 1 000 000 🪙 *(Главная цель игры!)*\n"
+        "👑 **Путь возвращения к жене:**\n\n"
+        f"⚔️ **Сюжетная арена:** {arena_done}\n"
+        f"🎫 **Билет к жене:** {ticket_done}\n\n"
     )
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("Купить Легу (10k)", callback_data="buy_lego"),
-        types.InlineKeyboardButton("Купить Осколки (5k)", callback_data="buy_shards")
-    )
-    markup.add(types.InlineKeyboardButton("🎫 Купить Билет к Сизи (1M)", callback_data="buy_sizi"))
-    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
+    if user["story_stage"] > 20 and user["wife_ticket"]:
+        text += "🎉 **ПОБЕДА! ТЫ ВЕРНУЛСЯ К ЖЕНЕ И ВЕРНУЛ СВОЙ ТИТУЛ!**\nТы прошёл игру, Барон, но можешь продолжать фармить бесконечную арену!"
+    else:
+        text += "Выполни оба условия, чтобы завершить историю!"
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
-# ================= SHOP, MATH, ARENA & FLASK =================
-@bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
+# =====================================================================
+# 1. ЛАВКА ПРОКРУТКИ (ГАЧА + ШУТ + ОБЛОМКИ)
+# =====================================================================
+def roll_single_unit():
+    rarities = list(RARITY_WEIGHTS.keys())
+    weights = list(RARITY_WEIGHTS.values())
+    chosen_rarity = random.choices(rarities, weights=weights, k=1)[0]
+    pool = [uid for uid, u in UNITS.items() if u["rarity"] == chosen_rarity]
+    return random.choice(pool)
 
-def shop_callback(call):
-    user_id = call.from_user.id
-    coins, shards, _, _, last_lego, last_shards, _, _, _ = get_user(user_id)
-    current_time = time.time()
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    
-    if call.data == "buy_lego":
-        if current_time - last_lego < 10800:
-            bot.answer_callback_query(call.id, "⏳ Товар еще не завозили! Подождите.", show_alert=True)
-            conn.close()
-            return
-        if coins < 10000:
-            bot.answer_callback_query(call.id, "❌ Не хватает монет (нужно 10 000 🪙)!", show_alert=True)
-            conn.close()
-            return
-            
-        lego_cards = [cid for cid, c in CARDS.items() if c["rarity"] == "Legendary"]
-        chosen = random.choice(lego_cards)
-        card = CARDS[chosen]
-        
-        cursor.execute("UPDATE users SET coins = coins - 10000, last_shop_lego = ? WHERE user_id = ?", (current_time, user_id))
-        cursor.execute("SELECT count FROM inventory WHERE user_id = ? AND card_id = ?", (user_id, chosen))
-        if cursor.fetchone():
-            cursor.execute("UPDATE inventory SET count = count + 1 WHERE user_id = ? AND card_id = ?", (user_id, chosen))
+def execute_gacha_pulls(user, count):
+    owned = set(get_owned_units(user))
+    court = get_court_squad(user)
+    has_jester = "jester" in court
+
+    shards = user["shards"]
+    results = []
+    pulls_left = count
+
+    while pulls_left > 0:
+        pulls_left -= 1
+        uid = roll_single_unit()
+        unit = UNITS[uid]
+        is_dup = uid in owned
+
+        if is_dup:
+            gained_shards = SHARDS_BY_RARITY[unit["rarity"]]
+            shards += gained_shards
+            results.append(f"🔸 [{unit['rarity']}] **{unit['name']}** — повторка (+{gained_shards} 🧩)")
         else:
-            cursor.execute("INSERT INTO inventory (user_id, card_id, count) VALUES (?, ?, 1)", (user_id, chosen))
-        conn.commit()
-        conn.close()
-        bot.answer_callback_query(call.id, f"🎉 Вы купили легендарную карту: {card['name']}!", show_alert=True)
-        
-    elif call.data == "buy_shards":
-        if current_time - last_shards < 5400:
-            bot.answer_callback_query(call.id, "⏳ Посылка с осколками еще в пути!", show_alert=True)
-            conn.close()
-            return
-        if coins < 5000:
-            bot.answer_callback_query(call.id, "❌ Не хватает монет (нужно 5 000 🪙)!", show_alert=True)
-            conn.close()
-            return
-            
-        cursor.execute("UPDATE users SET coins = coins - 5000, shards = shards + 3000, last_shop_shards = ? WHERE user_id = ?", (current_time, user_id))
-        conn.commit()
-        conn.close()
-        bot.answer_callback_query(call.id, "💎 Вы успешно купили 3 000 осколков!", show_alert=True)
-        
-    elif call.data == "buy_sizi":
-        if coins < 1000000:
-            bot.answer_callback_query(call.id, "❌ Нужно ровно 1 000 000 монет для покупки билета!", show_alert=True)
-            conn.close()
-            return
-            
-        cursor.execute("UPDATE users SET coins = coins - 1000000 WHERE user_id = ?", (user_id,))
-        conn.commit()
-        conn.close()
-        
-        win_text = (
-            "🏆 **ПОБЕДА! ВЫ СКОПИЛИ МИЛЛИОН МОНЕТ!** 🏆\n\n"
-            "Вы бросили лопату в поле, гордо расправили плечи, купили заветный золотой билет и отправились прямиком к Сизи.\n"
-            "Она бросилась вам на шею, а отец признал, что карты приносят больше пользы, чем мотыга.\n"
-            "Вы стали легендой этого магического мира!"
-        )
-        bot.send_message(call.message.chat.id, win_text, parse_mode="Markdown")
+            owned.add(uid)
+            kind = "Придворный" if unit["type"] == "court" else "Боевой"
+            results.append(f"✨ [{unit['rarity']}] **{unit['name']}** ({kind}) — **НОВЫЙ!**")
 
-@bot.message_handler(func=lambda m: m.text == "🧠 Математический бонус")
+        if has_jester and random.random() < 0.20:
+            pulls_left += 1
+            results.append("🃏 *Шут рассмешил судьбу! Бесплатный доп. прокрут!*")
 
-def math_action(message):
-    user_id = message.from_user.id
-    coins, shards, math_count, last_reset, _, _, _, _, _ = get_user(user_id)
-    
-    current_time = time.time()
-    if current_time - last_reset > 1800:
-        math_count = 0
-        last_reset = current_time
-        conn = sqlite3.connect("game.db", check_same_thread=False)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET math_count = 0, last_math_reset = ? WHERE user_id = ?", (last_reset, user_id))
-        conn.commit()
-        conn.close()
-        
-    if math_count >= 5:
-        bot.send_message(message.chat.id, "⏳ Лимит в 5 примеров исчерпан! Подождите 30 минут.")
-        return
-        
-    if math_count == 4:
-        expr = "(50 + 20 - 10) * 2 / 4"
-        answer = int((50 + 20 - 10) * 2 / 4)
+    update_user(user["user_id"], owned_units=json.dumps(list(owned)), shards=shards)
+    return results
+
+@bot.message_handler(func=lambda m: m.text == "🎰 Лавка прокрутки")
+def menu_gacha(message):
+    user = get_user(message.from_user.id)
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton("🪙 Прокрутить 1 раз (100 монет)", callback_data="roll_coins_1"),
+        types.InlineKeyboardButton("🧩 Прокрутить за обломки (25 обломков)", callback_data="roll_shards_1")
+    )
+    text = (
+        "🎰 **Лавка прокрутки отрядов**\n\n"
+        f"💰 Монеты: **{user['coins']}** | 🧩 Обломки: **{user['shards']}**\n\n"
+        "🎲 **Шансы:** Об (55%), Ред (35%), Лег (9%), Миф (1%)"
+    )
+    bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=kb)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["roll_coins_1", "roll_shards_1"])
+def handle_gacha_roll(call):
+    user = get_user(call.from_user.id)
+    if call.data == "roll_coins_1":
+        if user["coins"] < 100:
+            bot.answer_callback_query(call.id, "❌ Недостаточно монет (нужно 100)!", show_alert=True)
+            return
+        update_user(user["user_id"], coins=user["coins"] - 100)
     else:
-        a = random.randint(10, 50)
-        b = random.randint(2, 10)
-        c = random.randint(1, 5)
-        op1 = random.choice(['+', '-', '*'])
-        op2 = random.choice(['/', '+'])
-        if op1 == '/':
-            a = b * random.randint(1, 5)
-        
-        expr_str = f"{a} {op1} {b} {op2} {c}"
-        try:
-            eval_str = expr_str.replace(':', '/')
-            answer = int(eval(eval_str))
-            expr = expr_str
-        except:
-            expr = "12 + 8 * 2 / 4"
-            answer = 16
-            
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("REPLACE INTO math_states (user_id, answer) VALUES (?, ?)", (user_id, answer))
-    conn.commit()
-    conn.close()
-    
-    bot.send_message(
-        message.chat.id,
-        f"🧠 **Математический бонус ({math_count + 1}/5)**\nРешите пример (+500 🪙):\n`{expr} = ?`",
-        parse_mode="Markdown"
+        if user["shards"] < 25:
+            bot.answer_callback_query(call.id, "❌ Недостаточно обломков (нужно 25)!", show_alert=True)
+            return
+        update_user(user["user_id"], shards=user["shards"] - 25)
+
+    user = get_user(call.from_user.id)
+    res = execute_gacha_pulls(user, 1)
+    user = get_user(call.from_user.id)
+
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton("🪙 Прокрутить ещё (100 монет)", callback_data="roll_coins_1"),
+        types.InlineKeyboardButton("🧩 За обломки (25 🧩)", callback_data="roll_shards_1")
+    )
+    bot.edit_message_text(
+        "🎰 **Результат прокрутки:**\n\n" + "\n".join(res) + f"\n\n💰 Монеты: **{user['coins']}** | 🧩 Обломки: **{user['shards']}**",
+        call.message.chat.id, call.message.id, parse_mode="Markdown", reply_markup=kb
     )
 
-@bot.message_handler(func=lambda m: m.text and m.text.lstrip('-').isdigit())
+# =====================================================================
+# 2. АРЕНА (БОЕВКА)
+# =====================================================================
+def build_combatants(unit_list, is_player=True):
+    combatants = []
+    for idx, item in enumerate(unit_list):
+        if is_player:
+            u = UNITS[item]
+            combatants.append({"id": f"p_{idx}", "uid": item, "name": u["name"], "row": u["row"], "hp": u["hp"], "max_hp": u["hp"], "atk": u["atk"], "ability": item, "alive": True})
+        else:
+            uid, mult = item
+            if uid in BOSS_TEMPLATES:
+                b = BOSS_TEMPLATES[uid]
+                combatants.append({"id": f"e_{idx}", "uid": uid, "name": b["name"], "row": b["row"], "hp": int(b["hp"] * mult), "max_hp": int(b["hp"] * mult), "atk": int(b["atk"] * mult), "ability": b["ability"], "alive": True})
+            else:
+                u = UNITS[uid]
+                combatants.append({"id": f"e_{idx}", "uid": uid, "name": u["name"], "row": u["row"], "hp": int(u["hp"] * mult), "max_hp": int(u["hp"] * mult), "atk": int(u["atk"] * mult), "ability": uid, "alive": True})
+    return combatants
 
-def check_math_answer(message):
-    user_id = message.from_user.id
-    user_ans = int(message.text)
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT answer FROM math_states WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        return
+def simulate_battle(player_uids, enemy_specs):
+    team_p = build_combatants(player_uids, is_player=True)
+    team_e = build_combatants(enemy_specs, is_player=False)
+    logs = []
+
+    def check_griffin_shift(team, label):
+        front_alive = [u for u in team if u["alive"] and u["row"] == "front"]
+        if not front_alive:
+            for u in team:
+                if u["alive"] and u["ability"] == "griffin" and u["row"] == "back":
+                    u["row"] = "front"
+                    logs.append(f"🦅 {label}: **{u['name']}** перелетел в ближний ряд!")
+
+    def get_valid_targets(defenders):
+        alive_kings = [u for u in defenders if u["alive"] and u["ability"] == "king"]
+        if alive_kings: return alive_kings
+        front = [u for u in defenders if u["alive"] and u["row"] == "front"]
+        if front: return front
+        return [u for u in defenders if u["alive"]]
+
+    def apply_damage(attacker, targets, defenders, team_label):
+        if attacker["atk"] <= 0 or not targets: return
+        atk_val = attacker["atk"]
+        alive_allies = [u for u in (team_p if team_label == "Игрок" else team_e) if u["alive"]]
+        if attacker["ability"] == "orc" and len(alive_allies) == 1:
+            atk_val *= 2
+
+        hit_count = 1
+        if attacker["ability"] == "goblin": hit_count = 2
+        elif attacker["ability"] == "war_mage": hit_count = 3
+
+        chosen_targets = random.sample(targets, min(hit_count, len(targets)))
+        for t in chosen_targets:
+            t["hp"] -= atk_val
+            if t["hp"] <= 0:
+                t["hp"] = 0
+                t["alive"] = False
+                logs.append(f"💀 {attacker['name']} добил **{t['name']}**!")
+                healers = [h for h in defenders if h["alive"] and h["ability"] == "healer_mage" and h != t]
+                if healers and random.random() < 0.25:
+                    t["alive"] = True
+                    t["hp"] = int(t["max_hp"] * 0.5)
+                    logs.append(f"✨ Целебный Маг воскресил **{t['name']}**!")
+                necros = [n for n in defenders if n["alive"] and n["ability"] == "necro"]
+                if necros and t["uid"] == "skeleton":
+                    defenders.append({"id": f"e_sum_{random.randint(100,999)}", "uid": "skeleton", "name": "Призванный Скелет", "row": "front", "hp": 70, "max_hp": 70, "atk": 45, "ability": "skeleton", "alive": True})
+                    logs.append("🕯 Мортиус поднял нового **Скелета**!")
+
+    for turn in range(1, 31):
+        check_griffin_shift(team_p, "Ваш отряд")
+        check_griffin_shift(team_e, "Враги")
+        for p in [u for u in team_p if u["alive"]]:
+            targets = get_valid_targets(team_e)
+            if not targets: break
+            apply_damage(p, targets, team_e, "Игрок")
+        if not any(u["alive"] for u in team_e): return True, logs[-8:]
         
-    correct_ans = row[0]
-    cursor.execute("DELETE FROM math_states WHERE user_id = ?", (user_id,))
-    
-    _, _, math_pct, _, _ = get_total_bonuses(user_id)
-    reward = 500
-    if math_pct > 0:
-        reward = int(reward * (1 + math_pct / 100))
-        
-    if user_ans == correct_ans:
-        cursor.execute("UPDATE users SET coins = coins + ?, math_count = math_count + 1 WHERE user_id = ?", (reward, user_id))
-        conn.commit()
-        conn.close()
-        bot.send_message(message.chat.id, f"✅ **Верно!** Вы получили **+{reward} 🪙**!", parse_mode="Markdown")
-    else:
-        conn.close()
-        bot.send_message(message.chat.id, f"❌ **Неверно!** Правильный ответ: {correct_ans}.", parse_mode="Markdown")
+        check_griffin_shift(team_p, "Ваш отряд")
+        check_griffin_shift(team_e, "Враги")
+        for e in [u for u in team_e if u["alive"]]:
+            targets = get_valid_targets(team_p)
+            if not targets: break
+            apply_damage(e, targets, team_p, "Враг")
+        if not any(u["alive"] for u in team_p): return False, logs[-8:]
+
+    return False, logs[-8:] + ["⏳ Бой затянулся (ничья)."]
 
 @bot.message_handler(func=lambda m: m.text == "⚔️ Арена")
-
-def arena_action(message):
-    user_id = message.from_user.id
-    coins, shards, _, _, _, _, _, arena_stage, last_arena_time = get_user(user_id)
-    
-    current_time = time.time()
-    if current_time - last_arena_time < 21600:
-        hours_left = int((21600 - (current_time - last_arena_time)) // 3600)
-        mins_left = int(((21600 - (current_time - last_arena_time)) % 3600) // 60)
-        bot.send_message(message.chat.id, f"⏳ Арена на перезарядке! Следующий бой будет доступен через {hours_left} ч. {mins_left} мин.")
+def menu_arena(message):
+    user = get_user(message.from_user.id)
+    squad = get_battle_squad(user)
+    if not squad:
+        bot.send_message(message.chat.id, "❌ У тебя пустой боевой отряд! Сформируй его в разделе **🛡 Отряды**.", parse_mode="Markdown")
         return
 
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT card_id FROM active_deck WHERE user_id = ? AND type = 'combat'", (user_id,))
-    deck = cursor.fetchall()
-    conn.close()
-    
-    if not deck:
-        bot.send_message(message.chat.id, "⚔️ Ваша боевая колода пуста! Экипируйте карты в разделе «Колоды».")
-        return
-        
-    total_atk = sum(CARDS[cid]["atk"] for cid, in deck if cid in CARDS)
-    total_hp = sum(CARDS[cid]["hp"] for cid, in deck if cid in CARDS)
-    
-    is_boss = arena_stage in [5, 10, 15]
-    if is_boss:
-        enemy_atk = 15 + (arena_stage * 12)
-        enemy_hp = 50 + (arena_stage * 30)
-        enemy_name = f"БОСС ЭТАПА №{arena_stage}"
-    else:
-        enemy_atk = 10 + (arena_stage * 6)
-        enemy_hp = 30 + (arena_stage * 15)
-        enemy_name = f"Враг этапа {arena_stage}/15"
+    stage = user["story_stage"]
+    stage_info = ARENA_STAGES[stage]["name"] if stage <= 20 else "Все этапы пройдены!"
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    if stage <= 20:
+        kb.add(types.InlineKeyboardButton(f"📖 Сюжетная арена ({stage}/20)", callback_data="arena_story"))
+    kb.add(types.InlineKeyboardButton("♾ Бесконечная арена (Фарм монет)", callback_data="arena_endless"))
 
-    player_power = total_atk * 1.5 + total_hp
-    enemy_power = enemy_atk * 1.5 + enemy_hp
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    
-    if player_power >= enemy_power:
-        reward_coins = arena_stage * 200
-        reward_shards = arena_stage * 50
-        next_stage = arena_stage + 1
-        if next_stage > 15:
-            next_stage = 15
-            
-        cursor.execute("UPDATE users SET coins = coins + ?, shards = shards + ?, arena_stage = ?, last_arena_time = ? WHERE user_id = ?", 
-                       (reward_coins, reward_shards, next_stage, current_time, user_id))
-        conn.commit()
-        conn.close()
-        
-        res_text = (
-            f"🏆 **Победа на Арене! ({arena_stage}/15)**\n"
-            f"⚔️ Противник: {enemy_name} (АТК: {enemy_atk} | ХП: {enemy_hp})\n"
-            f"🛡 Ваша сила колоды: АТК {total_atk} / ХП {total_hp}\n\n"
-            f"🎁 Награда: **+{reward_coins} 🪙** и **+{reward_shards} 💎**!\n"
-        )
-        if is_boss:
-            res_text += f"🔥 **Вы повергли грозного босса! Открыт следующий этап!**"
+    squad_names = ", ".join(UNITS[u]["name"] for u in squad)
+    text = f"⚔️ **Арена**\n\n🛡 **Отряд:** {squad_names}\n📍 **Сюжет:** {stage_info}"
+    bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=kb)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["arena_story", "arena_endless"])
+def handle_arena_fight(call):
+    user = get_user(call.from_user.id)
+    squad = get_battle_squad(user)
+    if not squad: return
+
+    if call.data == "arena_story":
+        stage = user["story_stage"]
+        st = ARENA_STAGES[stage]
+        won, log = simulate_battle(squad, st["enemies"])
+        header = f"📖 **{st['name']}**\n\n"
+        if won:
+            reward = st["reward"]
+            update_user(user["user_id"], coins=user["coins"] + reward, story_stage=stage + 1)
+            outcome = f"🏆 **ПОБЕДА!** Награда: **+{reward} монет**!"
         else:
-            res_text += f"➡️ Переход на этап {next_stage}!"
-        bot.send_message(message.chat.id, res_text, parse_mode="Markdown")
+            outcome = "💀 **ПОРАЖЕНИЕ!**"
     else:
-        cursor.execute("UPDATE users SET last_arena_time = ? WHERE user_id = ?", (current_time, user_id))
-        conn.commit()
-        conn.close()
-        
-        bot.send_message(
-            message.chat.id,
-            f"💀 **Поражение на этапе {arena_stage}!**\n"
-            f"Противник ({enemy_name}) оказался сильнее: АТК {enemy_atk} / ХП {enemy_hp}.\n"
-            f"Ваша сила: АТК {total_atk} / ХП {total_hp}.\n\n"
-            f"💡 Улучшайте боевую колоду через гачу или магазин и попробуйте снова через 6 часов!",
-            parse_mode="Markdown"
-        )
+        scale = 0.8 + (user["story_stage"] * 0.06)
+        pool = [uid for uid, u in UNITS.items() if u["type"] == "battle"]
+        enemies = [(random.choice(pool), scale) for _ in range(random.randint(2, 4))]
+        won, log = simulate_battle(squad, enemies)
+        header = "♾ **Бесконечная арена**\n\n"
+        if won:
+            reward = random.randint(150, 300) + user["story_stage"] * 15
+            update_user(user["user_id"], coins=user["coins"] + reward)
+            outcome = f"🏆 **ПОБЕДА!** +{reward} монет!"
+        else:
+            outcome = "💀 **ПОРАЖЕНИЕ!**"
 
-@bot.callback_query_handler(func=lambda call: call.data in ["deck_combat", "deck_play"])
+    bot.edit_message_text(f"{header}📜 **Бой:**\n" + "\n".join(log) + f"\n\n{outcome}", call.message.chat.id, call.message.id, parse_mode="Markdown")
 
-def deck_setup_menu(call):
-    user_id = call.from_user.id
-    deck_type = "combat" if call.data == "deck_combat" else "play"
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("SELECT card_id, count FROM inventory WHERE user_id = ?", (user_id,))
-    inventory = cursor.fetchall()
-    conn.close()
-    
-    filtered_cards = [item for item in inventory if item[0] in CARDS and CARDS[item[0]]["type"] == deck_type]
-    
-    if not filtered_cards:
-        bot.answer_callback_query(call.id, "У вас нет карт этого типа в инвентаре!", show_alert=True)
+# =====================================================================
+# 3. ЗАДАНИЯ (МАТЕМАТИКА И ВИКТОРИНА)
+# =====================================================================
+def generate_math_problem(is_boss=False):
+    if is_boss:
+        a, b, c = random.randint(15, 45), random.randint(12, 30), random.randint(2, 9)
+        return f"🔥 **БОСС-ПРИМЕР (200 монет):** `({a} + {b}) × {c}`", (a + b) * c, 200
+    else:
+        op = random.choice(["+", "-", "*"])
+        if op == "+": a, b = random.randint(45, 250), random.randint(45, 250); ans = a + b
+        elif op == "-": a = random.randint(100, 350); b = random.randint(25, a - 10); ans = a - b
+        else: a, b = random.randint(11, 25), random.randint(4, 12); ans = a * b
+        return f"🧮 **Пример (100 монет):** `{a} {op} {b}`", ans, 100
+
+@bot.message_handler(func=lambda m: m.text == "📜 Задания")
+def menu_tasks(message):
+    user = get_user(message.from_user.id)
+    now = time.time()
+    m_cd = max(0, 1800 - (now - user["last_math_time"]))
+    q_cd = max(0, 3600 - (now - user["last_quiz_time"]))
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton(f"🧮 Математика ({format_time_left(m_cd)})", callback_data="start_math"),
+        types.InlineKeyboardButton(f"🧠 Викторина ({format_time_left(q_cd)})", callback_data="start_quiz")
+    )
+    bot.send_message(message.chat.id, f"📜 **Задания барона**\n🎟 Скип-билетов: {user['skip_tickets']}", parse_mode="Markdown", reply_markup=kb)
+
+@bot.callback_query_handler(func=lambda call: call.data == "start_math")
+def start_math(call):
+    user = get_user(call.from_user.id)
+    if time.time() - user["last_math_time"] < 1800:
+        bot.answer_callback_query(call.id, "⏳ Математика перезаряжается!", show_alert=True)
         return
-        
-    markup = types.InlineKeyboardMarkup()
-    for card_id, count in filtered_cards:
-        c = CARDS[card_id]
-        markup.add(types.InlineKeyboardButton(f"➕ Экипировать {c['emoji']} {c['name']} (x{count})", callback_data=f"equip_{deck_type}_{card_id}"))
-        
-    markup.add(types.InlineKeyboardButton("🗑 Очистить эту колоду", callback_data=f"clear_{deck_type}"))
-    
-    t_name = "Боевую" if deck_type == "combat" else "Игральную"
-    bot.edit_message_text(f"⚙️ Выберите карту для добавления в **{t_name} колоду** (макс. 4):", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    court = get_court_squad(user)
+    extra = sum(1 for u in ["merchant", "maid", "jester"] if u in court)
+    problems = [generate_math_problem(False) for _ in range(5 + extra)]
+    problems.append(generate_math_problem(True))
+    update_user(user["user_id"], last_math_time=time.time())
+    active_tasks[user["user_id"]] = {"mode": "math", "problems": problems, "index": 0, "earned": 0}
+    send_math(call.message.chat.id, user["user_id"])
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("equip_") or call.data.startswith("clear_"))
-
-def deck_modify_callback(call):
-    user_id = call.from_user.id
-    data = call.data
-    
-    conn = sqlite3.connect("game.db", check_same_thread=False)
-    cursor = conn.cursor()
-    
-    if data.startswith("clear_"):
-        deck_type = data.split("_")[1]
-        cursor.execute("DELETE FROM active_deck WHERE user_id = ? AND type = ?", (user_id, deck_type))
-        conn.commit()
-        conn.close()
-        bot.answer_callback_query(call.id, "🗑 Колода очищена!", show_alert=True)
+def send_math(chat_id, user_id):
+    st = active_tasks.get(user_id)
+    if not st or st["index"] >= len(st["problems"]):
+        earned = st["earned"] if st else 0
+        user = get_user(user_id)
+        update_user(user_id, coins=user["coins"] + earned)
+        active_tasks.pop(user_id, None)
+        bot.send_message(chat_id, f"🎉 Математика завершена! +{earned} монет", parse_mode="Markdown")
         return
-        
-    parts = data.split("_", 2)
-    if len(parts) < 3:
-        bot.answer_callback_query(call.id, "❌ Ошибка обработки данных", show_alert=True)
-        conn.close()
-        return
-        
-    _, deck_type, card_id = parts
-    
-    cursor.execute("SELECT COUNT(*) FROM active_deck WHERE user_id = ? AND type = ?", (user_id, deck_type))
-    count = cursor.fetchone()[0]
-    if count >= 4:
-        bot.answer_callback_query(call.id, "❌ В колоде уже максимум 4 карты!", show_alert=True)
-        conn.close()
-        return
-        
-    cursor.execute("SELECT count FROM inventory WHERE user_id = ? AND card_id = ?", (user_id, card_id))
-    inv_row = cursor.fetchone()
-    cursor.execute("SELECT 1 FROM active_deck WHERE user_id = ? AND card_id = ?", (user_id, card_id))
-    active_row = cursor.fetchone()
-    
-    if not inv_row:
-        bot.answer_callback_query(call.id, "❌ У вас нет этой карты!", show_alert=True)
-        conn.close()
-        return
-    if active_row:
-        bot.answer_callback_query(call.id, "❌ Эта карта уже в колоде!", show_alert=True)
-        conn.close()
-        return
-        
-    cursor.execute("INSERT INTO active_deck (user_id, card_id, type) VALUES (?, ?, ?)", (user_id, card_id, deck_type))
-    conn.commit()
-    conn.close()
-    
-    bot.answer_callback_query(call.id, f"✅ Карта успешно добавлена в колоду!", show_alert=True)
+    user = get_user(user_id)
+    q_text, _, _ = st["problems"][st["index"]]
+    kb = types.InlineKeyboardMarkup()
+    if user["skip_tickets"] > 0:
+        kb.add(types.InlineKeyboardButton(f"🎟 Скип-билет ({user['skip_tickets']})", callback_data="use_skip"))
+    bot.send_message(chat_id, f"Пример {st['index']+1}/{len(st['problems'])}:\n{q_text}\n\n✍️ *Напиши ответ:*", parse_mode="Markdown", reply_markup=kb)
 
-# ================= FLASK SERVER =================
-app = Flask('')
+@bot.callback_query_handler(func=lambda call: call.data == "start_quiz")
+def start_quiz(call):
+    user = get_user(call.from_user.id)
+    if time.time() - user["last_quiz_time"] < 3600:
+        bot.answer_callback_query(call.id, "⏳ Викторина перезаряжается!", show_alert=True)
+        return
+    court = get_court_squad(user)
+    total_q = 3 + (1 if "maid" in court else 0)
+    questions = []
+    hard_pool = random.sample(HARD_QUIZ, min(total_q, len(HARD_QUIZ)))
+    for i, q in enumerate(hard_pool):
+        if i == 0 and "artisan" in court: questions.append(random.choice(EASY_QUIZ))
+        else: questions.append(q)
+    update_user(user["user_id"], last_quiz_time=time.time())
+    active_tasks[user["user_id"]] = {"mode": "quiz", "questions": questions, "index": 0, "earned": 0}
+    send_quiz(call.message.chat.id, user["user_id"])
 
-@app.route('/')
+def send_quiz(chat_id, user_id):
+    st = active_tasks.get(user_id)
+    if not st or st["index"] >= len(st["questions"]):
+        earned = st["earned"] if st else 0
+        user = get_user(user_id)
+        update_user(user_id, coins=user["coins"] + earned)
+        active_tasks.pop(user_id, None)
+        bot.send_message(chat_id, f"🧠 Викторина завершена! +{earned} монет", parse_mode="Markdown")
+        return
+    user = get_user(user_id)
+    q_text, opts, _ = st["questions"][st["index"]]
+    shuffled = opts[:]
+    random.shuffle(shuffled)
+    st["current_options"] = shuffled
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    for idx, opt in enumerate(shuffled): kb.add(types.InlineKeyboardButton(opt, callback_data=f"quiz_ans_{idx}"))
+    if user["skip_tickets"] > 0: kb.add(types.InlineKeyboardButton(f"🎟 Скип ({user['skip_tickets']})", callback_data="use_skip"))
+    bot.send_message(chat_id, f"❓ Вопрос {st['index']+1}/{len(st['questions'])}:\n{q_text}", parse_mode="Markdown", reply_markup=kb)
 
-def home():
-    return "Бот работает 24/7!"
+@bot.callback_query_handler(func=lambda call: call.data == "use_skip")
+def handle_skip(call):
+    user = get_user(call.from_user.id)
+    st = active_tasks.get(user["user_id"])
+    if not st or user["skip_tickets"] <= 0: return
+    update_user(user["user_id"], skip_tickets=user["skip_tickets"] - 1)
+    if st["mode"] == "math":
+        _, _, rew = st["problems"][st["index"]]
+        st["earned"] += rew; st["index"] += 1
+        bot.answer_callback_query(call.id, f"🎟 Пропущено! +{rew} монет")
+        send_math(call.message.chat.id, user["user_id"])
+    else:
+        st["earned"] += 300; st["index"] += 1
+        bot.answer_callback_query(call.id, "🎟 Пропущено! +300 монет")
+        send_quiz(call.message.chat.id, user["user_id"])
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+@bot.callback_query_handler(func=lambda call: call.data.startswith("quiz_ans_"))
+def handle_quiz_ans(call):
+    st = active_tasks.get(call.from_user.id)
+    if not st or st["mode"] != "quiz": return
+    idx = int(call.data.split("_")[-1])
+    if st["current_options"][idx] == st["questions"][st["index"]][2]:
+        st["earned"] += 300
+        bot.answer_callback_query(call.id, "✅ Верно! +300 монет")
+    else:
+        bot.answer_callback_query(call.id, f"❌ Ошибка! Ответ: {st['questions'][st['index']][2]}", show_alert=True)
+    st["index"] += 1
+    send_quiz(call.message.chat.id, call.from_user.id)
+
+# =====================================================================
+# 4. ОТРЯДЫ, ИНВЕНТАРЬ И КАТАЛОГ
+# =====================================================================
+@bot.message_handler(func=lambda m: m.text == "🛡 Отряды")
+def menu_squads(message):
+    user = get_user(message.from_user.id)
+    court, battle = get_court_squad(user), get_battle_squad(user)
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton("🏛 Придворные (макс. 3)", callback_data="edit_court"),
+        types.InlineKeyboardButton("⚔️ Боевой отряд (макс. 4)", callback_data="edit_battle")
+    )
+    bot.send_message(message.chat.id, f"🛡 **Отряды**\n🏛 Придворные: {len(court)}/3\n⚔️ Бойцы: {len(battle)}/4", parse_mode="Markdown", reply_markup=kb)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["edit_court", "edit_battle"])
+def edit_squad_menu(call):
+    user = get_user(call.from_user.id)
+    is_c = call.data == "edit_court"
+    t_type = "court" if is_c else "battle"
+    curr = get_court_squad(user) if is_c else get_battle_squad(user)
+    available = [u for u in get_owned_units(user) if UNITS[u]["type"] == t_type]
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    for uid in available:
+        mark = "✅ " if uid in curr else "➕ "
+        kb.add(types.InlineKeyboardButton(f"{mark}{UNITS[uid]['name']}", callback_data=f"togg_{t_type}_{uid}"))
+    bot.edit_message_text(f"Выбери (выбрано {len(curr)}):", call.message.chat.id, call.message.id, reply_markup=kb)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("togg_"))
+def toggle_unit(call):
+    _, t_type, uid = call.data.split("_", 2)
+    user = get_user(call.from_user.id)
+    is_c = t_type == "court"
+    curr = get_court_squad(user) if is_c else get_battle_squad(user)
+    limit = 3 if is_c else 4
+    if uid in curr: curr.remove(uid)
+    else:
+        if len(curr) >= limit: return
+        curr.append(uid)
+    update_user(user["user_id"], court_squad=json.dumps(curr) if is_c else user["court_squad"], battle_squad=user["battle_squad"] if is_c else json.dumps(curr))
+    call.data = "edit_court" if is_c else "edit_battle"
+    edit_squad_menu(call)
+
+@bot.message_handler(func=lambda m: m.text == "🎒 Инвентарь")
+def menu_inv(message):
+    user = get_user(message.from_user.id)
+    owned = get_owned_units(user)
+    bot.send_message(message.chat.id, f"🎒 **Инвентарь**\n💰 Монеты: {user['coins']}\n🧩 Обломки: {user['shards']}\n🎟 Скипы: {user['skip_tickets']}\n📦 Открыто отрядов: {len(owned)}/18", parse_mode="Markdown")
+
+@bot.message_handler(func=lambda m: m.text == "📖 Каталог")
+def menu_cat(message):
+    lines = ["📖 **Каталог отрядов:**"]
+    for u in UNITS.values(): lines.append(f"• [{u['rarity']}] **{u['name']}**: {u['desc']}")
+    bot.send_message(message.chat.id, "\n".join(lines), parse_mode="Markdown")
+
+# =====================================================================
+# 5. МАГАЗИН И ЗАМОК
+# =====================================================================
+@bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
+def menu_shop(message):
+    user = get_user(message.from_user.id)
+    price = 90 if "fisherman" in get_court_squad(user) else 100
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton("🎰 10 прокрутов (900 монет)", callback_data="buy_roll10"),
+        types.InlineKeyboardButton(f"🎟 Скип-билет ({price} монет)", callback_data="buy_skip"),
+        types.InlineKeyboardButton("💍 Билет к жене (50 000 монет)", callback_data="buy_wife_ticket")
+    )
+    bot.send_message(message.chat.id, f"🏪 **Магазин**\n💰 Баланс: {user['coins']}", parse_mode="Markdown", reply_markup=kb)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["buy_roll10", "buy_skip", "buy_wife_ticket"])
+def shop_buy(call):
+    user = get_user(call.from_user.id)
+    if call.data == "buy_roll10":
+        if user["coins"] < 900: return
+        update_user(user["user_id"], coins=user["coins"] - 900)
+        res = execute_gacha_pulls(get_user(call.from_user.id), 10)
+        bot.send_message(call.message.chat.id, "🎰 10 прокрутов:\n" + "\n".join(res))
+    elif call.data == "buy_skip":
+        price = 90 if "fisherman" in get_court_squad(user) else 100
+        if user["coins"] < price: return
+        update_user(user["user_id"], coins=user["coins"] - price, skip_tickets=user["skip_tickets"] + 1)
+        bot.answer_callback_query(call.id, "✅ Скип куплен!")
+    elif call.data == "buy_wife_ticket":
+        if user["coins"] < 50000 or user["wife_ticket"]: return
+        update_user(user["user_id"], coins=user["coins"] - 50000, wife_ticket=1)
+        bot.send_message(call.message.chat.id, "💍 Билет к жене куплен!")
+
+@bot.message_handler(func=lambda m: m.text == "🏰 Замок")
+def menu_castle(message):
+    user = get_user(message.from_user.id)
+    lvl = user["castle_level"]
+    used = user["fields"] + user["taverns"] + user["mines"]
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton("💰 Собрать прибыль", callback_data="castle_collect"))
+    if used < lvl:
+        if user["fields"] < 2: kb.add(types.InlineKeyboardButton("🌾 Поле (3000)", callback_data="build_field"))
+        if user["taverns"] < 2: kb.add(types.InlineKeyboardButton("🍺 Трактир (5000)", callback_data="build_tavern"))
+        if user["mines"] < 1: kb.add(types.InlineKeyboardButton("⛏ Шахта (10000)", callback_data="build_mine"))
+    if lvl < 5: kb.add(types.InlineKeyboardButton(f"⬆️ Улучшить замок ({CASTLE_UPGRADE_COSTS[lvl]})", callback_data="castle_upgrade"))
+    bot.send_message(message.chat.id, f"🏰 **Замок (Ур. {lvl}/5)**\n🌾 Поля: {user['fields']}/2\n🍺 Трактиры: {user['taverns']}/2\n⛏ Шахты: {user['mines']}/1", parse_mode="Markdown", reply_markup=kb)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["castle_collect", "build_field", "build_tavern", "build_mine", "castle_upgrade"])
+def castle_actions(call):
+    user = get_user(call.from_user.id)
+    now = time.time()
+    court = get_court_squad(user)
+    lvl = user["castle_level"]
+    used = user["fields"] + user["taverns"] + user["mines"]
+
+    if call.data == "castle_collect":
+        inc = 0; upd = {}
+        jb = 25 if "jester" in court else 0
+        if user["fields"] > 0 and (now - user["last_field_claim"]) >= 3600:
+            inc += (300 + (25 if "peasant" in court else 0) + jb) * user["fields"]
+            upd["last_field_claim"] = now
+        if user["taverns"] > 0 and (now - user["last_tavern_claim"]) >= 3600:
+            inc += (500 + (50 if "barin" in court else 0) + (25 if "maid" in court else 0) + jb) * user["taverns"]
+            upd["last_tavern_claim"] = now
+        if user["mines"] > 0 and (now - user["last_mine_claim"]) >= 5400:
+            inc += (1000 + (100 if "miner" in court else 0) + jb) * user["mines"]
+            upd["last_mine_claim"] = now
+        if inc == 0:
+            bot.answer_callback_query(call.id, "⏳ Ещё рано собирать!", show_alert=True)
+            return
+        upd["coins"] = user["coins"] + inc
+        update_user(user["user_id"], **upd)
+        bot.answer_callback_query(call.id, f"💰 Собрано +{inc} монет!", show_alert=True)
+    elif call.data == "build_field" and used < lvl and user["fields"] < 2 and user["coins"] >= 3000:
+        update_user(user["user_id"], coins=user["coins"] - 3000, fields=user["fields"] + 1, last_field_claim=now)
+        bot.answer_callback_query(call.id, "🌾 Поле построено!")
+    elif call.data == "build_tavern" and used < lvl and user["taverns"] < 2 and user["coins"] >= 5000:
+        update_user(user["user_id"], coins=user["coins"] - 5000, taverns=user["taverns"] + 1, last_tavern_claim=now)
+        bot.answer_callback_query(call.id, "🍺 Трактир построен!")
+    elif call.data == "build_mine" and used < lvl and user["mines"] < 1 and user["coins"] >= 10000:
+        update_user(user["user_id"], coins=user["coins"] - 10000, mines=user["mines"] + 1, last_mine_claim=now)
+        bot.answer_callback_query(call.id, "⛏ Шахта построена!")
+    elif call.data == "castle_upgrade" and lvl < 5 and user["coins"] >= CASTLE_UPGRADE_COSTS[lvl]:
+        update_user(user["user_id"], coins=user["coins"] - CASTLE_UPGRADE_COSTS[lvl], castle_level=lvl + 1)
+        bot.answer_callback_query(call.id, f"🏰 Замок улучшен до ур. {lvl+1}!")
+
+# =====================================================================
+# 6. КОДЫ И ОБРАБОТКА ТЕКСТА
+# =====================================================================
+@bot.message_handler(func=lambda m: m.text == "🎟 Коды")
+def menu_codes(message):
+    active_tasks[message.from_user.id] = {"mode": "promo"}
+    bot.send_message(message.chat.id, "🎟 Введи промокод в чат:", parse_mode="Markdown")
+
+@bot.message_handler(func=lambda m: True)
+def handle_text(message):
+    st = active_tasks.get(message.from_user.id)
+    if not st: return
+    text = message.text.strip()
+    if st["mode"] == "promo":
+        active_tasks.pop(message.from_user.id, None)
+        user = get_user(message.from_user.id)
+        if text.upper() == "OGOMILION" and not user["promo_used"]:
+            update_user(message.from_user.id, coins=user["coins"] + 1000000, promo_used=1)
+            bot.send_message(message.chat.id, "🎉 КОД АКТИВИРОВАН! +1 000 000 монет!")
+        else:
+            bot.send_message(message.chat.id, "❌ Неверный или уже использованный код.")
+    elif st["mode"] == "math":
+        try: ans = int(text)
+        except ValueError: return
+        _, correct, rew = st["problems"][st["index"]]
+        if ans == correct:
+            st["earned"] += rew
+            bot.send_message(message.chat.id, f"✅ Верно! +{rew} монет")
+        else:
+            bot.send_message(message.chat.id, f"❌ Ошибка! Ответ: {correct}")
+        st["index"] += 1
+        send_math(message.chat.id, message.from_user.id)
+
+# =====================================================================
+# ЗАПУСК FLASK И БОТА
+# =====================================================================
+@app.route("/")
+def index():
+    return "Baron RPG Bot is running!", 200
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
+    init_db()
+    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000))), daemon=True).start()
     bot.infinity_polling(skip_pending=True)
-            
