@@ -8,21 +8,17 @@ from flask import Flask
 import telebot
 from telebot import types
 
-# =====================================================================
-# НАСТРОЙКИ И КОНСТАНТЫ
-# =====================================================================
 TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 DB_PATH = "baron_game.db"
 
-# Шансы выпадения и награда в обломках за повторку
 RARITY_WEIGHTS = {"Об": 55, "Ред": 35, "Лег": 9, "Миф": 1}
 SHARDS_BY_RARITY = {"Об": 5, "Ред": 10, "Лег": 25, "Миф": 50}
 
-# Все 18 отрядов (8 придворных + 10 боевых)
+# Все отряды с новыми бойцами и придворными
 UNITS = {
-    # --- ПРИДВОРНЫЕ (макс. 3 в отряде) ---
+    # --- ПРИДВОРНЫЕ ---
     "peasant": {
         "name": "Крестьянин",
         "type": "court",
@@ -53,6 +49,12 @@ UNITS = {
         "rarity": "Ред",
         "desc": "+50 монет за каждый Трактир в замке раз в час.",
     },
+    "herbalist": {
+        "name": "Травница",
+        "type": "court",
+        "rarity": "Ред",
+        "desc": "В мини-игре с алмазами и бомбой гарантированно открывает 1 алмаз.",
+    },
     "miner": {
         "name": "Шахтёр",
         "type": "court",
@@ -63,15 +65,27 @@ UNITS = {
         "name": "Горничная",
         "type": "court",
         "rarity": "Лег",
-        "desc": "+1 пример в математике, +1 вопрос в викторине, +25 монет за каждый Трактир в час.",
+        "desc": (
+            "+1 пример в математике, +1 вопрос в викторине, +25 монет за каждый"
+            " Трактир в час."
+        ),
+    },
+    "lackey": {
+        "name": "Лакей",
+        "type": "court",
+        "rarity": "Лег",
+        "desc": "Награда в мини-игре «Орёл или решка» удваивается.",
     },
     "jester": {
         "name": "Шут",
         "type": "court",
         "rarity": "Миф",
-        "desc": "20% шанс на повторный бесплатный прокрут при выпадении отряда, +25 монет за каждое здание в замке, +1 пример в математике.",
+        "desc": (
+            "20% шанс на повторный бесплатный прокрут, +25 монет за здание,"
+            " +1 пример."
+        ),
     },
-    # --- БОЕВЫЕ (макс. 4 в отряде) ---
+    # --- БОЕВЫЕ ---
     "skeleton": {
         "name": "Скелет",
         "type": "battle",
@@ -88,7 +102,7 @@ UNITS = {
         "row": "front",
         "hp": 110,
         "atk": 30,
-        "desc": "Ближний. Сбалансированные характеристики.",
+        "desc": "Ближний. Сбалансированный.",
     },
     "goblin": {
         "name": "Гоблин",
@@ -97,7 +111,16 @@ UNITS = {
         "row": "front",
         "hp": 65,
         "atk": 35,
-        "desc": "Ближний. Хрупкий, много урона, бьёт сразу по двоим.",
+        "desc": "Ближний. Бьёт сразу по двоим.",
+    },
+    "slime": {
+        "name": "Слизь",
+        "type": "battle",
+        "rarity": "Об",
+        "row": "front",
+        "hp": 180,
+        "atk": 0,
+        "desc": "Ближний. Очень много здоровья, но совсем не атакует.",
     },
     "dwarf": {
         "name": "Гном",
@@ -106,7 +129,7 @@ UNITS = {
         "row": "front",
         "hp": 220,
         "atk": 25,
-        "desc": "Ближний. Очень жирный танк со средним уроном.",
+        "desc": "Ближний. Жирный танк.",
     },
     "orc": {
         "name": "Орк",
@@ -115,7 +138,7 @@ UNITS = {
         "row": "front",
         "hp": 140,
         "atk": 40,
-        "desc": "Ближний. Равномерный; если остался один в отряде — урон х2.",
+        "desc": "Ближний. Если остался один — урон х2.",
     },
     "elf": {
         "name": "Эльф",
@@ -124,7 +147,27 @@ UNITS = {
         "row": "back",
         "hp": 95,
         "atk": 50,
-        "desc": "Дальний. Сбалансированный, но повышенный урон.",
+        "desc": "Дальний. Повышенный урон.",
+    },
+    "paladin": {
+        "name": "Паладин",
+        "type": "battle",
+        "rarity": "Лег",
+        "row": "front",
+        "hp": 300,
+        "atk": 35,
+        "desc": "Ближний. Огромное HP, средний урон с шансом атаки 40%.",
+    },
+    "dark_elf": {
+        "name": "Тёмный Эльф",
+        "type": "battle",
+        "rarity": "Лег",
+        "row": "back",
+        "hp": 110,
+        "atk": 60,
+        "desc": (
+            "Дальний. Бьёт 1 раз в начале, каждый следующий ход подпитывает HP."
+        ),
     },
     "war_mage": {
         "name": "Маг войны",
@@ -133,7 +176,7 @@ UNITS = {
         "row": "back",
         "hp": 85,
         "atk": 30,
-        "desc": "Дальний. Среднее здоровье, урон по троим противникам сразу.",
+        "desc": "Дальний. Урон по троим сразу.",
     },
     "healer_mage": {
         "name": "Целебный Маг",
@@ -142,7 +185,7 @@ UNITS = {
         "row": "back",
         "hp": 180,
         "atk": 0,
-        "desc": "Дальний. Не бьёт, жирный. При смерти союзника 25% шанс воскресить его.",
+        "desc": "Дальний. 25% шанс воскресить павшего союзника.",
     },
     "king": {
         "name": "Король",
@@ -151,7 +194,7 @@ UNITS = {
         "row": "front",
         "hp": 320,
         "atk": 55,
-        "desc": "Ближний. Много HP. Пока он жив, весь урон врагов идёт только в него.",
+        "desc": "Ближний. Пока жив, весь вражеский урон идет только в него.",
     },
     "griffin": {
         "name": "Грифон",
@@ -160,7 +203,30 @@ UNITS = {
         "row": "back",
         "hp": 120,
         "atk": 65,
-        "desc": "Дальний. Если весь ближний ряд пал, перелетает в первый ряд как ближний.",
+        "desc": "Дальний. При падении переднего ряда перелетает вперёд.",
+    },
+    "archer_queen": {
+        "name": "Королева Лучниц",
+        "type": "battle",
+        "rarity": "Миф",
+        "row": "back",
+        "hp": 160,
+        "atk": 45,
+        "desc": (
+            "Дальний. Бьёт ВСЕХ врагов, бафает урон заднего ряда союзников."
+        ),
+    },
+    "beast_king": {
+        "name": "Король Зверей",
+        "type": "battle",
+        "rarity": "Миф",
+        "row": "front",
+        "hp": 250,
+        "atk": 50,
+        "desc": (
+            "Ближний. При смерти возрождает случайный боевой отряд из"
+            " инвентаря/поля."
+        ),
     },
 }
 
@@ -168,10 +234,26 @@ CASTLE_UPGRADE_COSTS = {1: 1000, 2: 2200, 3: 3500, 4: 5000}
 
 HARD_QUIZ = [
     ("В каком году произошло Крещение Руси?", ["988", "882", "1054", "1147"], "988"),
-    ("Какая планета Солнечной системы самая горячая?", ["Венера", "Меркурий", "Марс", "Юпитер"], "Венера"),
-    ("Сколько хромосом в здоровой клетке человека?", ["46", "48", "44", "23"], "46"),
-    ("Кто написал роман «Преступление и наказание»?", ["Достоевский", "Толстой", "Чехов", "Гоголь"], "Достоевский"),
-    ("Какой химический элемент обозначается символом Au?", ["Золото", "Серебро", "Алюминий", "Медь"], "Золото"),
+    (
+        "Какая планета Солнечной системы самая горячая?",
+        ["Венера", "Меркурий", "Марс", "Юпитер"],
+        "Венера",
+    ),
+    (
+        "Сколько хромосом в здоровой клетке человека?",
+        ["46", "48", "44", "23"],
+        "46",
+    ),
+    (
+        "Кто написал роман «Преступление и наказание»?",
+        ["Достоевский", "Толстой", "Чехов", "Гоголь"],
+        "Достоевский",
+    ),
+    (
+        "Какой химический элемент обозначается символом Au?",
+        ["Золото", "Серебро", "Алюминий", "Медь"],
+        "Золото",
+    ),
     ("Столица Австралии?", ["Канберра", "Сидней", "Мельбурн", "Перт"], "Канберра"),
     ("Какое самое глубокое озеро в мире?", ["Байкал", "Танганьика", "Виктория", "Каспийское"], "Байкал"),
 ]
@@ -183,27 +265,28 @@ EASY_QUIZ = [
     ("Какая столица России?", ["Москва", "Санкт-Петербург", "Казань", "Сочи"], "Москва"),
 ]
 
+# Сюжетная арена (награды за победу убраны, только продвижение сюжета)
 ARENA_STAGES = {
-    1: {"name": "Этаж 1: Застава худых земель I", "reward": 250, "enemies": [("skeleton", 1.0), ("skeleton", 1.0), ("elf", 0.8)]},
-    2: {"name": "Этаж 2: Застава худых земель II", "reward": 300, "enemies": [("skeleton", 1.1), ("warrior", 1.0), ("elf", 0.9)]},
-    3: {"name": "Этаж 3: Застава худых земель III", "reward": 350, "enemies": [("warrior", 1.1), ("skeleton", 1.2), ("elf", 1.0)]},
-    4: {"name": "БОСС 1: Разбойник «Ржавый Клык»", "reward": 800, "enemies": [("goblin", 1.0), ("goblin", 1.0), ("goblin", 1.0), ("goblin_boss", 1.0)]},
-    5: {"name": "Этаж 4: Выжженные равнины I", "reward": 400, "enemies": [("dwarf", 0.9), ("goblin", 1.1), ("goblin", 1.1), ("war_mage", 0.9)]},
-    6: {"name": "Этаж 5: Выжженные равнины II", "reward": 450, "enemies": [("dwarf", 1.0), ("goblin", 1.2), ("warrior", 1.2), ("war_mage", 1.0)]},
-    7: {"name": "Этаж 6: Выжженные равнины III", "reward": 500, "enemies": [("dwarf", 1.1), ("goblin", 1.2), ("goblin", 1.2), ("war_mage", 1.1)]},
-    8: {"name": "БОСС 2: Предатель «Капитан Ворц»", "reward": 1200, "enemies": [("warrior", 1.3), ("dwarf", 1.3), ("vortz_boss", 1.0)]},
-    9: {"name": "Этаж 7: Ущелье орков I", "reward": 550, "enemies": [("orc", 1.0), ("orc", 1.0), ("elf", 1.2), ("elf", 1.2)]},
-    10: {"name": "Этаж 8: Ущелье орков II", "reward": 600, "enemies": [("orc", 1.1), ("orc", 1.1), ("elf", 1.3), ("elf", 1.3)]},
-    11: {"name": "Этаж 9: Ущелье орков III", "reward": 650, "enemies": [("orc", 1.2), ("orc", 1.2), ("elf", 1.3), ("war_mage", 1.2)]},
-    12: {"name": "БОСС 3: Некромант «Мортиус Теневой»", "reward": 1800, "enemies": [("skeleton", 1.4), ("skeleton", 1.4), ("skeleton", 1.4), ("mortius_boss", 1.0)]},
-    13: {"name": "Этаж 10: Цитадель изгнанников I", "reward": 750, "enemies": [("dwarf", 1.3), ("orc", 1.2), ("healer_mage", 1.0), ("war_mage", 1.2)]},
-    14: {"name": "Этаж 11: Цитадель изгнанников II", "reward": 800, "enemies": [("dwarf", 1.4), ("orc", 1.3), ("healer_mage", 1.1), ("war_mage", 1.3)]},
-    15: {"name": "Этаж 12: Цитадель изгнанников III", "reward": 900, "enemies": [("dwarf", 1.4), ("orc", 1.4), ("healer_mage", 1.2), ("war_mage", 1.3)]},
-    16: {"name": "БОСС 4: Генерал «Железнорук»", "reward": 2500, "enemies": [("orc", 1.4), ("orc", 1.4), ("healer_mage", 1.3), ("ironhand_boss", 1.0)]},
-    17: {"name": "Этаж 13: Авангард Тени", "reward": 1000, "enemies": [("dwarf", 1.5), ("dwarf", 1.5), ("war_mage", 1.5), ("war_mage", 1.5)]},
-    18: {"name": "Этаж 14: Кровавая Стая", "reward": 1100, "enemies": [("orc", 1.5), ("orc", 1.5), ("orc", 1.5), ("healer_mage", 1.4)]},
-    19: {"name": "Этаж 15: Элитный легион", "reward": 1300, "enemies": [("dwarf", 1.6), ("orc", 1.6), ("war_mage", 1.6), ("healer_mage", 1.5)]},
-    20: {"name": "ФИНАЛЬНЫЙ БОСС 5: Узурпатор «Лорд Вейн»", "reward": 5000, "enemies": [("vein_king_boss", 1.0), ("war_mage", 1.6), ("war_mage", 1.6), ("healer_mage", 1.5)]},
+    1: {"name": "Этаж 1: Застава худых земель I", "reward": 0, "enemies": [("skeleton", 1.0), ("skeleton", 1.0), ("elf", 0.8)]},
+    2: {"name": "Этаж 2: Застава худых земель II", "reward": 0, "enemies": [("skeleton", 1.1), ("warrior", 1.0), ("elf", 0.9)]},
+    3: {"name": "Этаж 3: Застава худых земель III", "reward": 0, "enemies": [("warrior", 1.1), ("skeleton", 1.2), ("elf", 1.0)]},
+    4: {"name": "БОСС 1: Разбойник «Ржавый Клык»", "reward": 0, "enemies": [("goblin", 1.0), ("goblin", 1.0), ("goblin", 1.0), ("goblin_boss", 1.0)]},
+    5: {"name": "Этаж 4: Выжженные равнины I", "reward": 0, "enemies": [("dwarf", 0.9), ("goblin", 1.1), ("goblin", 1.1), ("war_mage", 0.9)]},
+    6: {"name": "Этаж 5: Выжженные равнины II", "reward": 0, "enemies": [("dwarf", 1.0), ("goblin", 1.2), ("warrior", 1.2), ("war_mage", 1.0)]},
+    7: {"name": "Этаж 6: Выжженные равнины III", "reward": 0, "enemies": [("dwarf", 1.1), ("goblin", 1.2), ("goblin", 1.2), ("war_mage", 1.1)]},
+    8: {"name": "БОСС 2: Предатель «Капитан Ворц»", "reward": 0, "enemies": [("warrior", 1.3), ("dwarf", 1.3), ("vortz_boss", 1.0)]},
+    9: {"name": "Этаж 7: Ущелье орков I", "reward": 0, "enemies": [("orc", 1.0), ("orc", 1.0), ("elf", 1.2), ("elf", 1.2)]},
+    10: {"name": "Этаж 8: Ущелье орков II", "reward": 0, "enemies": [("orc", 1.1), ("orc", 1.1), ("elf", 1.3), ("elf", 1.3)]},
+    11: {"name": "Этаж 9: Ущелье орков III", "reward": 0, "enemies": [("orc", 1.2), ("orc", 1.2), ("elf", 1.3), ("war_mage", 1.2)]},
+    12: {"name": "БОСС 3: Некромант «Мортиус Теневой»", "reward": 0, "enemies": [("skeleton", 1.4), ("skeleton", 1.4), ("skeleton", 1.4), ("mortius_boss", 1.0)]},
+    13: {"name": "Этаж 10: Цитадель изгнанников I", "reward": 0, "enemies": [("dwarf", 1.3), ("orc", 1.2), ("healer_mage", 1.0), ("war_mage", 1.2)]},
+    14: {"name": "Этаж 11: Цитадель изгнанников II", "reward": 0, "enemies": [("dwarf", 1.4), ("orc", 1.3), ("healer_mage", 1.1), ("war_mage", 1.3)]},
+    15: {"name": "Этаж 12: Цитадель изгнанников III", "reward": 0, "enemies": [("dwarf", 1.4), ("orc", 1.4), ("healer_mage", 1.2), ("war_mage", 1.3)]},
+    16: {"name": "БОСС 4: Генерал «Железнорук»", "reward": 0, "enemies": [("orc", 1.4), ("orc", 1.4), ("healer_mage", 1.3), ("ironhand_boss", 1.0)]},
+    17: {"name": "Этаж 13: Авангард Тени", "reward": 0, "enemies": [("dwarf", 1.5), ("dwarf", 1.5), ("war_mage", 1.5), ("war_mage", 1.5)]},
+    18: {"name": "Этаж 14: Кровавая Стая", "reward": 0, "enemies": [("orc", 1.5), ("orc", 1.5), ("orc", 1.5), ("healer_mage", 1.4)]},
+    19: {"name": "Этаж 15: Элитный легион", "reward": 0, "enemies": [("dwarf", 1.6), ("orc", 1.6), ("war_mage", 1.6), ("healer_mage", 1.5)]},
+    20: {"name": "ФИНАЛЬНЫЙ БОСС 5: Узурпатор «Лорд Вейн»", "reward": 0, "enemies": [("vein_king_boss", 1.0), ("war_mage", 1.6), ("war_mage", 1.6), ("healer_mage", 1.5)]},
 }
 
 BOSS_TEMPLATES = {
@@ -215,6 +298,7 @@ BOSS_TEMPLATES = {
 }
 
 active_tasks = {}
+active_minigames = {}
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -243,8 +327,12 @@ def init_db():
             last_quiz_time REAL DEFAULT 0,
             last_shop_roll REAL DEFAULT 0,
             last_shop_skip REAL DEFAULT 0,
+            last_coinflip_time REAL DEFAULT 0,
+            last_diamond_time REAL DEFAULT 0,
+            last_endless_time REAL DEFAULT 0,
             story_stage INTEGER DEFAULT 1,
             promo_used INTEGER DEFAULT 0,
+            seen_lore INTEGER DEFAULT 0,
             owned_units TEXT DEFAULT '[]',
             court_squad TEXT DEFAULT '[]',
             battle_squad TEXT DEFAULT '[]'
@@ -271,8 +359,7 @@ def get_user(user_id, username="Барон"):
     return dict(row)
 
 def update_user(user_id, **kwargs):
-    if not kwargs:
-        return
+    if not kwargs: return
     conn = get_db()
     c = conn.cursor()
     cols = ", ".join(f"{k} = ?" for k in kwargs)
@@ -281,22 +368,15 @@ def update_user(user_id, **kwargs):
     conn.commit()
     conn.close()
 
-def get_court_squad(user):
-    return json.loads(user["court_squad"])
-
-def get_battle_squad(user):
-    return json.loads(user["battle_squad"])
-
-def get_owned_units(user):
-    return json.loads(user["owned_units"])
+def get_court_squad(user): return json.loads(user["court_squad"])
+def get_battle_squad(user): return json.loads(user["battle_squad"])
+def get_owned_units(user): return json.loads(user["owned_units"])
 
 def format_time_left(seconds):
-    if seconds <= 0:
-        return "Готово!"
+    if seconds <= 0: return "Готово!"
     m, s = divmod(int(seconds), 60)
     h, m = divmod(m, 60)
-    if h > 0:
-        return f"{h}ч {m}м"
+    if h > 0: return f"{h}ч {m}м"
     return f"{m}м {s}с"
 
 def main_menu_keyboard():
@@ -305,6 +385,7 @@ def main_menu_keyboard():
         types.KeyboardButton("🎰 Лавка прокрутки"),
         types.KeyboardButton("⚔️ Арена"),
         types.KeyboardButton("📜 Задания"),
+        types.KeyboardButton("💎 Заработка"),
         types.KeyboardButton("🛡 Отряды"),
         types.KeyboardButton("🎒 Инвентарь"),
         types.KeyboardButton("🏪 Магазин"),
@@ -325,8 +406,8 @@ def cmd_start(message):
         f"🏰 **Добро пожаловать в худые земли, Барон {user['username']}!**\n\n"
         "Коварный узурпатор Лорд Вейн оболгал тебя и сослал в глушь. Твоя любимая жена осталась в столице.\n"
         "Чтобы вернуться к ней, тебе нужно:\n"
-        "1️⃣ Собрать непобедимый отряд и **полностью пройти Сюжетную Арену (15 этажей и 5 боссов)**.\n"
-        "2️⃣ Накопить богатства и **купить в Магазине «Билет к жене»** (50 000 монет).\n\n"
+        "1️⃣ Собрать непобедимый отряд и **полностью пройти Сюжетную Арену (20 этажей и боссов)**.\n"
+        "2️⃣ Накопить богатства и **купить в Магазине «Билет к жене»** (100 000 монет).\n\n"
         f"💰 Твой капитал: **{user['coins']} монет** | 🧩 Обломки: **{user['shards']}**"
     )
     bot.send_message(message.chat.id, lore_text, parse_mode="Markdown", reply_markup=main_menu_keyboard())
@@ -335,7 +416,7 @@ def cmd_start(message):
 def menu_lore(message):
     user = get_user(message.from_user.id)
     arena_done = "✅ Пройдена!" if user["story_stage"] > 20 else f"❌ Этап {user['story_stage']}/20"
-    ticket_done = "✅ Куплен!" if user["wife_ticket"] else "❌ Не куплен (50 000 монет)"
+    ticket_done = "✅ Куплен!" if user["wife_ticket"] else "❌ Не куплен (100 000 монет)"
     text = (
         "👑 **Путь возвращения к жене:**\n\n"
         f"⚔️ **Сюжетная арена:** {arena_done}\n"
@@ -745,37 +826,61 @@ def menu_cat(message):
     bot.send_message(message.chat.id, "\n".join(lines), parse_mode="Markdown")
 
 # =====================================================================
-# 5. МАГАЗИН И ЗАМОК
+# 5. МАГАЗИН И ЗАМОК (ОБНОВЛЕННЫЕ КД И ЦЕНЫ)
 # =====================================================================
 @bot.message_handler(func=lambda m: m.text == "🏪 Магазин")
 def menu_shop(message):
     user = get_user(message.from_user.id)
+    now = time.time()
     price = 90 if "fisherman" in get_court_squad(user) else 100
+    
+    roll10_cd = max(0, 1800 - (now - user["last_shop_roll"]))      # 30 минут
+    skip_cd = max(0, 900 - (now - user["last_shop_skip"]))        # 15 минут
+
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(
-        types.InlineKeyboardButton("🎰 10 прокрутов (900 монет)", callback_data="buy_roll10"),
-        types.InlineKeyboardButton(f"🎟 Скип-билет ({price} монет)", callback_data="buy_skip"),
-        types.InlineKeyboardButton("💍 Билет к жене (50 000 монет)", callback_data="buy_wife_ticket")
+        types.InlineKeyboardButton(f"🎰 10 прокрутов (900 монет) [{format_time_left(roll10_cd)}]", callback_data="buy_roll10"),
+        types.InlineKeyboardButton(f"🎟 Скип-билет ({price} монет) [{format_time_left(skip_cd)}]", callback_data="buy_skip"),
+        types.InlineKeyboardButton("💍 Билет к жене (100 000 монет)", callback_data="buy_wife_ticket")
     )
     bot.send_message(message.chat.id, f"🏪 **Магазин**\n💰 Баланс: {user['coins']}", parse_mode="Markdown", reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda call: call.data in ["buy_roll10", "buy_skip", "buy_wife_ticket"])
 def shop_buy(call):
     user = get_user(call.from_user.id)
+    now = time.time()
+    
     if call.data == "buy_roll10":
-        if user["coins"] < 900: return
-        update_user(user["user_id"], coins=user["coins"] - 900)
+        if now - user["last_shop_roll"] < 1800:
+            bot.answer_callback_query(call.id, "⏳ Подожди, еще не прошло 30 минут!", show_alert=True)
+            return
+        if user["coins"] < 900:
+            bot.answer_callback_query(call.id, "❌ Нужно 900 монет!", show_alert=True)
+            return
+        update_user(user["user_id"], coins=user["coins"] - 900, last_shop_roll=now)
         res = execute_gacha_pulls(get_user(call.from_user.id), 10)
         bot.send_message(call.message.chat.id, "🎰 10 прокрутов:\n" + "\n".join(res))
+        
     elif call.data == "buy_skip":
         price = 90 if "fisherman" in get_court_squad(user) else 100
-        if user["coins"] < price: return
-        update_user(user["user_id"], coins=user["coins"] - price, skip_tickets=user["skip_tickets"] + 1)
-        bot.answer_callback_query(call.id, "✅ Скип куплен!")
+        if now - user["last_shop_skip"] < 900:
+            bot.answer_callback_query(call.id, "⏳ Подожди, еще не прошло 15 минут!", show_alert=True)
+            return
+        if user["coins"] < price:
+            bot.answer_callback_query(call.id, f"❌ Нужно {price} монет!", show_alert=True)
+            return
+        update_user(user["user_id"], coins=user["coins"] - price, skip_tickets=user["skip_tickets"] + 1, last_shop_skip=now)
+        bot.answer_callback_query(call.id, "✅ Скип-билет куплен!")
+        
     elif call.data == "buy_wife_ticket":
-        if user["coins"] < 50000 or user["wife_ticket"]: return
-        update_user(user["user_id"], coins=user["coins"] - 50000, wife_ticket=1)
-        bot.send_message(call.message.chat.id, "💍 Билет к жене куплен!")
+        if user["wife_ticket"]:
+            bot.answer_callback_query(call.id, "У тебя уже есть билет!", show_alert=True)
+            return
+        if user["coins"] < 100000:
+            bot.answer_callback_query(call.id, "❌ Нужно 100 000 монет!", show_alert=True)
+            return
+        update_user(user["user_id"], coins=user["coins"] - 100000, wife_ticket=1)
+        bot.send_message(call.message.chat.id, "💍 Поздравляю! Куплен заветный «Билет к жене» за 100 000 монет!")
 
 @bot.message_handler(func=lambda m: m.text == "🏰 Замок")
 def menu_castle(message):
